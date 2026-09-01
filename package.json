@@ -1,0 +1,39 @@
+{
+  "name": "part-connectivity-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run --config vite.config.ts",
+    "test:watch": "vitest --config vite.config.ts"
+  },
+  "overrides": {
+    "three": "$three",
+    "@types/three": "$@types/three"
+  },
+  "dependencies": {
+    "@eb/ldraw-models": "file:../eb-ldraw-toolkit/packages/ldraw-models",
+    "@eb/ldraw-parser": "file:../eb-ldraw-toolkit/packages/ldraw-parser",
+    "@eb/ldraw-three-core": "file:../eb-ldraw-toolkit/packages/ldraw-three-core",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "three": "^0.174.0",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/three": "^0.174.0",
+    "@vitejs/plugin-react": "^4.4.1",
+    "sass": "^1.99.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.2.5",
+    "vitest": "^3.2.4"
+  }
+}
