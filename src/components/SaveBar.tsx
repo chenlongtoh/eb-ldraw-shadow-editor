@@ -43,11 +43,8 @@ export function SaveBar() {
         partName: partName ?? partFile,
       })
       markClean()
-      const where = saveResult.wroteToInstructionBuilder
-        ? `instruction-builder/.../parts/${partFile}`
-        : `connectivity-overrides/parts/${partFile}`
       setMessage(
-        `Saved ${verified.snaps.length} snaps to ${where} (re-resolved OK).` +
+        `Saved ${verified.snaps.length} snaps to ${saveResult.shadowPath ?? partFile}` +
           (saveResult.warning ? ` ${saveResult.warning}` : ''),
       )
     } catch (err) {
@@ -84,7 +81,7 @@ export function SaveBar() {
       {savePreview && (
         <div className="save-preview">
           <p>
-            Will write <code>parts/{partFile}</code> ({lines.filter((l) => l.startsWith('0 !LDCAD')).length}{' '}
+            Will write <code>{partFile}</code> to the configured shadow library ({lines.filter((l) => l.startsWith('0 !LDCAD')).length}{' '}
             meta lines, SNAP_CLEAR + flattened snaps).
           </p>
           <pre>{previewHead}{previewTail ? `\n…\n${previewTail}` : ''}</pre>

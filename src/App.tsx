@@ -19,13 +19,33 @@ export function App() {
   const showMale = useEditorStore((s) => s.showMale)
   const showFemale = useEditorStore((s) => s.showFemale)
   const showSourceLabels = useEditorStore((s) => s.showSourceLabels)
+  const snapToGeometry = useEditorStore((s) => s.snapToGeometry)
+  const setSnapToGeometry = useEditorStore((s) => s.setSnapToGeometry)
+  const gridLock = useEditorStore((s) => s.gridLock)
+  const setGridLock = useEditorStore((s) => s.setGridLock)
   const setVisibility = useEditorStore((s) => s.setVisibility)
   const selectedSnapId = useEditorStore((s) => s.selectedSnapId)
   const deleteSnap = useEditorStore((s) => s.deleteSnap)
+  const copySelectedSnap = useEditorStore((s) => s.copySelectedSnap)
+  const pasteSnap = useEditorStore((s) => s.pasteSnap)
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target)) return
+
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && !e.altKey) {
+        const key = e.key.toLowerCase()
+        if (key === 'c') {
+          if (copySelectedSnap()) e.preventDefault()
+          return
+        }
+        if (key === 'v') {
+          if (pasteSnap()) e.preventDefault()
+          return
+        }
+      }
+
       if (e.metaKey || e.ctrlKey || e.altKey) return
 
       if (e.key === 'm' || e.key === 'M') {
@@ -46,7 +66,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedSnapId, deleteSnap])
+  }, [selectedSnapId, deleteSnap, copySelectedSnap, pasteSnap])
 
   return (
     <div className="app-shell">
@@ -79,6 +99,22 @@ export function App() {
               onChange={(e) => setVisibility({ showSourceLabels: e.target.checked })}
             />
             Sources
+          </label>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={snapToGeometry}
+              onChange={(e) => setSnapToGeometry(e.target.checked)}
+            />
+            Snap
+          </label>
+          <label className="toggle" title="Allow sub-LDU movement while dragging snaps">
+            <input
+              type="checkbox"
+              checked={!gridLock}
+              onChange={(e) => setGridLock(!e.target.checked)}
+            />
+            Unlock
           </label>
           <div className="mode-toggle">
             <button

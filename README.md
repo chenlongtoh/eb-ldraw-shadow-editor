@@ -9,9 +9,15 @@ npm install
 npm run dev
 ```
 
-Reads LDraw parts from `../instruction-builder/public/ldraw-parts` and connectivity from `../instruction-builder/public/ldcad-parts-connectivity`.
+Reads LDraw parts from `../instruction-builder/public/ldraw-parts` and **reads/writes** connectivity exclusively from `../LDCadShadowLibrary` (no Instruction Builder connectivity fallback).
 
-On save, writes flattened shadow `.dat` files into the Instruction Builder connectivity library when that path is writable. If not (e.g. sandboxed process), files are also written to `connectivity-overrides/parts/` in this repo (served with overlay priority). Copy those into IB's `public/ldcad-parts-connectivity/parts/` when ready.
+Configure paths in `.env` (see `.env.example`):
+
+```bash
+LDCAD_SHADOW_LIBRARY=../LDCadShadowLibrary
+```
+
+On save, writes flattened shadow `.dat` files to `$LDCAD_SHADOW_LIBRARY/parts/`.
 
 ## Usage
 

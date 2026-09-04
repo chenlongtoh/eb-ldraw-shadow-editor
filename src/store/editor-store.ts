@@ -1,4 +1,5 @@
 import type { LDrawSnapRecord, LDrawSourcedSnapRecord, SnapGender, SnapMetaType } from '@eb/ldraw-models'
+import type { GeometryFeature } from '@eb/ldraw-parser'
 import { create } from 'zustand'
 
 export type EditableSnap = LDrawSourcedSnapRecord & {
@@ -21,6 +22,26 @@ export interface EditorSnapState {
   showMale: boolean
   showFemale: boolean
   showSourceLabels: boolean
+  /** Geometry feature catalog for magnetic snap (from LDraw tree). */
+  geometryFeatures: GeometryFeature[]
+  /** Magnetic snap while moving (translate mode). */
+  snapToGeometry: boolean
+  /**
+   * When true, translate positions snap to 1 LDU increments.
+   * Unlock (false) for free / sub-LDU movement.
+   */
+  gridLock: boolean
+  /** Active snap target during drag (for highlight / HUD). */
+  snapTargetFeatureId: string | null
+  /**
+   * Template being placed with the mouse (follows pointer until click).
+   * Null when not in place mode.
+   */
+  pendingPlacement: LDrawSnapRecord | null
+  /** Live preview pose while placing (part-local LDraw). */
+  pendingPose: { position: [number, number, number]; orientation: LDrawSnapRecord['orientation'] } | null
+  /** In-memory clipboard for copy/paste of a snap (not OS clipboard). */
+  clipboardSnap: LDrawSnapRecord | null
   /** Undo stack (snapshots of snaps arrays). */
   past: EditableSnap[][]
   future: EditableSnap[][]
@@ -35,6 +56,7 @@ export interface EditorSnapActions {
     partName?: string
     snaps: LDrawSourcedSnapRecord[]
     hadShadowFile: boolean
+    geometryFeatures?: GeometryFeature[]
   }) => void
   selectSnap: (id: string | null) => void
   updateSnap: (id: string, patch: Partial<LDrawSnapRecord>) => void
@@ -42,8 +64,26 @@ export interface EditorSnapActions {
   updateSnapLive: (id: string, patch: Partial<LDrawSnapRecord>) => void
   /** Push one undo snapshot before a continuous gizmo transform. */
   beginTransform: () => void
+  setSnapTargetFeatureId: (id: string | null) => void
+  setSnapToGeometry: (enabled: boolean) => void
+  setGridLock: (enabled: boolean) => void
   addSnap: (snap: LDrawSnapRecord, sourceFile?: string) => string
   deleteSnap: (id: string) => void
+  /** Begin click-to-place for a template snap. */
+  beginPlaceSnap: (snap: LDrawSnapRecord) => void
+  /** Update the ghost pose while moving the mouse. */
+  updatePendingPose: (
+    position: [number, number, number],
+    orientation: LDrawSnapRecord['orientation'],
+  ) => void
+  /** Commit the pending snap at the current pose. */
+  confirmPlaceSnap: () => string | null
+  /** Cancel click-to-place without adding. */
+  cancelPlaceSnap: () => void
+  /** Copy the currently selected snap into the editor clipboard. */
+  copySelectedSnap: () => boolean
+  /** Paste a duplicate of the clipboard snap (offset slightly) and select it. */
+  pasteSnap: () => string | null
   setVisibility: (opts: Partial<Pick<EditorSnapState, 'showMale' | 'showFemale' | 'showSourceLabels'>>) => void
   setSavePreview: (text: string | null) => void
   markClean: () => void
@@ -57,14 +97,22 @@ function newId(): string {
   return crypto.randomUUID()
 }
 
+function cloneSnapRecord(snap: EditableSnap | LDrawSnapRecord): LDrawSnapRecord {
+  return {
+    ...snap,
+    position: [...(snap.position ?? [0, 0, 0])] as [number, number, number],
+    orientation: [...(snap.orientation ?? IDENTITY_ORI)] as typeof IDENTITY_ORI,
+    secs: snap.secs?.map((sec) => ({ shape: sec.shape, values: [...sec.values] })),
+    seq: snap.seq ? [...snap.seq] : undefined,
+    bounding: snap.bounding ? { kind: snap.bounding.kind, values: [...snap.bounding.values] } : undefined,
+  }
+}
+
 function cloneSnaps(snaps: EditableSnap[]): EditableSnap[] {
   return snaps.map((s) => ({
-    ...s,
-    position: [...s.position] as [number, number, number],
-    orientation: [...s.orientation] as typeof IDENTITY_ORI,
-    secs: s.secs?.map((sec) => ({ shape: sec.shape, values: [...sec.values] })),
-    seq: s.seq ? [...s.seq] : undefined,
-    bounding: s.bounding ? { kind: s.bounding.kind, values: [...s.bounding.values] } : undefined,
+    ...cloneSnapRecord(s),
+    id: s.id,
+    sourceFile: s.sourceFile,
   }))
 }
 
@@ -100,6 +148,13 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
   showMale: true,
   showFemale: true,
   showSourceLabels: false,
+  geometryFeatures: [],
+  snapToGeometry: true,
+  gridLock: true,
+  snapTargetFeatureId: null,
+  pendingPlacement: null,
+  pendingPose: null,
+  clipboardSnap: null,
   past: [],
   future: [],
   savePreview: null,
@@ -107,7 +162,7 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
 
-  loadPart: ({ partFile, partName, snaps, hadShadowFile }) => {
+  loadPart: ({ partFile, partName, snaps, hadShadowFile, geometryFeatures = [] }) => {
     const editable: EditableSnap[] = snaps.map((s) => ({
       ...s,
       id: newId(),
@@ -129,10 +184,58 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
       past: [],
       future: [],
       savePreview: null,
+      geometryFeatures,
+      snapTargetFeatureId: null,
+      pendingPlacement: null,
+      pendingPose: null,
     })
   },
 
-  selectSnap: (id) => set({ selectedSnapId: id }),
+  selectSnap: (id) => set({ selectedSnapId: id, snapTargetFeatureId: null }),
+
+  setSnapTargetFeatureId: (id) => set({ snapTargetFeatureId: id }),
+
+  setSnapToGeometry: (enabled) => set({ snapToGeometry: enabled }),
+
+  setGridLock: (enabled) => set({ gridLock: enabled }),
+
+  beginPlaceSnap: (snap) => {
+    const placement = cloneSnapRecord(snap)
+    set({
+      pendingPlacement: placement,
+      pendingPose: {
+        position: [...(placement.position ?? [0, 0, 0])] as [number, number, number],
+        orientation: [...(placement.orientation ?? IDENTITY_ORI)] as typeof IDENTITY_ORI,
+      },
+      selectedSnapId: null,
+      snapTargetFeatureId: null,
+    })
+  },
+
+  updatePendingPose: (position, orientation) => {
+    const state = get()
+    if (!state.pendingPlacement) return
+    set({
+      pendingPose: {
+        position: [...position] as [number, number, number],
+        orientation: [...orientation] as typeof IDENTITY_ORI,
+      },
+    })
+  },
+
+  confirmPlaceSnap: () => {
+    const state = get()
+    if (!state.pendingPlacement || !state.pendingPose) return null
+    const snap = {
+      ...cloneSnapRecord(state.pendingPlacement),
+      position: [...state.pendingPose.position] as [number, number, number],
+      orientation: [...state.pendingPose.orientation] as typeof IDENTITY_ORI,
+    }
+    set({ pendingPlacement: null, pendingPose: null, snapTargetFeatureId: null })
+    return get().addSnap(snap, '(editor)')
+  },
+
+  cancelPlaceSnap: () => set({ pendingPlacement: null, pendingPose: null, snapTargetFeatureId: null }),
 
   updateSnap: (id, patch) => {
     const state = get()
@@ -189,6 +292,23 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
       selectedSnapId: state.selectedSnapId === id ? null : state.selectedSnapId,
       status: inferStatus(snaps.length, state.hadShadowFile),
     })
+  },
+
+  copySelectedSnap: () => {
+    const state = get()
+    const snap = state.snaps.find((s) => s.id === state.selectedSnapId)
+    if (!snap) return false
+    set({ clipboardSnap: cloneSnapRecord(snap) })
+    return true
+  },
+
+  pasteSnap: () => {
+    const state = get()
+    if (!state.clipboardSnap || !state.partFile) return null
+    const pasted = cloneSnapRecord(state.clipboardSnap)
+    // Offset so the duplicate is visible next to the original.
+    pasted.position = [pasted.position[0] + 1, pasted.position[1], pasted.position[2]]
+    return get().addSnap(pasted, '(paste)')
   },
 
   setVisibility: (opts) => set(opts),

@@ -1,8 +1,10 @@
 import {
   normalizePartFile,
   resolvePartConnectivityForEditor,
+  resolvePartGeometryFeatures,
   serializeFlattenedConnectivity,
   type ConnectivityFileLoader,
+  type GeometryFeature,
 } from '@eb/ldraw-parser'
 
 function normalizeInput(raw: string): string {
@@ -39,12 +41,21 @@ export async function loadPartConnectivity(partFile: string) {
   if (!status.geometryExists) {
     throw new Error(`Part geometry not found: ${normalized}`)
   }
-  const resolved = await resolvePartConnectivityForEditor(normalized, fileLoader)
+  const [resolved, geometryFeatures] = await Promise.all([
+    resolvePartConnectivityForEditor(normalized, fileLoader),
+    resolvePartGeometryFeatures(normalized, fileLoader),
+  ])
   return {
     partFile: normalized,
     snaps: resolved.snaps,
     hadShadowFile: resolved.hadShadowFile || status.hasShadow,
+    geometryFeatures,
   }
+}
+
+export async function loadPartGeometryFeatures(partFile: string): Promise<GeometryFeature[]> {
+  const normalized = normalizeInput(partFile)
+  return resolvePartGeometryFeatures(normalized, fileLoader)
 }
 
 export function buildSaveContent(
@@ -60,7 +71,8 @@ export function buildSaveContent(
 }
 
 export async function saveConnectivityFile(partFile: string, content: string): Promise<{
-  wroteToInstructionBuilder: boolean
+  wroteToShadowLibrary: boolean
+  shadowPath?: string
   warning?: string
 }> {
   const normalized = normalizeInput(partFile)

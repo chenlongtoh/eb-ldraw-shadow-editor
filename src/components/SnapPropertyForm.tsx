@@ -42,6 +42,7 @@ export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rota
   const snaps = useEditorStore((s) => s.snaps)
   const selectedSnapId = useEditorStore((s) => s.selectedSnapId)
   const updateSnap = useEditorStore((s) => s.updateSnap)
+  const gridLock = useEditorStore((s) => s.gridLock)
   const snap = snaps.find((s) => s.id === selectedSnapId)
 
   const euler = useMemo(
@@ -105,6 +106,12 @@ export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rota
   }
 
   const patch = (p: Partial<LDrawSnapRecord>) => updateSnap(snap.id, p)
+  const posStep = gridLock ? 1 : 0.1
+  const patchPos = (axis: 0 | 1 | 2, value: number) => {
+    const next = [...snap.position] as [number, number, number]
+    next[axis] = gridLock ? Math.round(value) : value
+    patch({ position: next })
+  }
 
   const nudge = (axis: RotationAxis, degrees: number) => {
     patch(rotateSnapAboutDisplayAxis(snap, axis, degrees))
@@ -170,9 +177,9 @@ export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rota
       </div>
 
       <div className="field-row">
-        <Num label="X" value={snap.position[0]} onChange={(x) => patch({ position: [x, snap.position[1], snap.position[2]] })} step={0.5} />
-        <Num label="Y" value={snap.position[1]} onChange={(y) => patch({ position: [snap.position[0], y, snap.position[2]] })} step={0.5} />
-        <Num label="Z" value={snap.position[2]} onChange={(z) => patch({ position: [snap.position[0], snap.position[1], z] })} step={0.5} />
+        <Num label="X" value={snap.position[0]} onChange={(x) => patchPos(0, x)} step={posStep} />
+        <Num label="Y" value={snap.position[1]} onChange={(y) => patchPos(1, y)} step={posStep} />
+        <Num label="Z" value={snap.position[2]} onChange={(z) => patchPos(2, z)} step={posStep} />
       </div>
 
       <div className={`rotation-panel ${gizmoMode === 'rotate' ? 'rotation-panel-active' : ''}`}>

@@ -15,9 +15,9 @@
     "@types/three": "$@types/three"
   },
   "dependencies": {
-    "@eb/ldraw-models": "file:../eb-ldraw-toolkit/packages/ldraw-models",
-    "@eb/ldraw-parser": "file:../eb-ldraw-toolkit/packages/ldraw-parser",
-    "@eb/ldraw-three-core": "file:../eb-ldraw-toolkit/packages/ldraw-three-core",
+    "@eb/ldraw-models": "^0.1.4",
+    "@eb/ldraw-parser": "^0.2.0",
+    "@eb/ldraw-three-core": "^0.3.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.0.0",
     "react": "^19.1.0",

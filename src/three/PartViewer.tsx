@@ -1,5 +1,5 @@
-import { Suspense, useEffect, useMemo, useState } from 'react'
-import { Canvas, useLoader, useThree } from '@react-three/fiber'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber'
 import { OrbitControls, Html } from '@react-three/drei'
 import { LDrawConditionalLineMaterial } from 'three/examples/jsm/materials/LDrawConditionalLineMaterial.js'
 import {
@@ -17,8 +17,18 @@ import * as THREE from 'three'
 import { useEditorStore, snapGender } from '../store/editor-store'
 import { partGeometryUrl } from '../services/connectivity-api'
 import { RotateAngleHud } from '../components/RotateAngleHud'
+import { SnapTargetHud } from '../components/SnapTargetHud'
 import { SnapOverlay } from './SnapOverlay'
 import { SnapGizmo, type RotateDragInfo } from './SnapGizmo'
+import { CameraViewCube } from './CameraViewCube'
+import { CameraSyncBridge } from './CameraSyncBridge'
+import { PlaceSnapTool } from './PlaceSnapTool'
+import {
+  applyOrthographicFit,
+  applyOrthographicFrustum,
+  computeOrthographicFit,
+  type OrthoFitResult,
+} from './ortho-camera-fit'
 
 const emptyRegistry = new PartRegistry()
 
@@ -46,28 +56,59 @@ const IDENTITY_PLACEMENT: PartPlacement = {
 }
 
 function FitCamera({ object, partFile }: { object: THREE.Object3D | null; partFile: string }) {
-  const { camera, controls } = useThree()
-  useEffect(() => {
+  const { camera, controls, size, invalidate } = useThree()
+  const fitRef = useRef<OrthoFitResult | null>(null)
+  const lastBoxRef = useRef(new THREE.Box3().makeEmpty())
+  const lastAspectRef = useRef(0)
+  const lastPartRef = useRef('')
+
+  useFrame(() => {
     if (!object) return
     const box = new THREE.Box3().setFromObject(object)
     if (box.isEmpty()) return
-    const size = box.getSize(new THREE.Vector3())
-    const center = box.getCenter(new THREE.Vector3())
-    const maxDim = Math.max(size.x, size.y, size.z, 40)
-    const cam = camera as THREE.PerspectiveCamera
-    cam.position.set(center.x + maxDim * 1.2, center.y + maxDim * 0.9, center.z + maxDim * 1.2)
-    cam.near = 0.1
-    cam.far = maxDim * 40
-    cam.updateProjectionMatrix()
-    if (controls && 'target' in controls) {
-      ;(controls as unknown as { target: THREE.Vector3 }).target.copy(center)
-      ;(controls as unknown as { update: () => void }).update?.()
+
+    const aspect = size.width / Math.max(size.height, 1)
+    const ortho = camera as THREE.OrthographicCamera
+    const layoutChanged =
+      !box.equals(lastBoxRef.current)
+      || aspect !== lastAspectRef.current
+      || lastPartRef.current !== partFile
+
+    if (layoutChanged) {
+      fitRef.current = computeOrthographicFit(object, aspect)
+      if (!fitRef.current) return
+
+      applyOrthographicFit(ortho, fitRef.current, aspect, ortho.zoom)
+      lastBoxRef.current.copy(box)
+      lastAspectRef.current = aspect
+      lastPartRef.current = partFile
+
+      if (controls && 'target' in controls) {
+        ;(controls as unknown as { target: THREE.Vector3 }).target.copy(fitRef.current.center)
+        ;(controls as unknown as { update: () => void }).update?.()
+      }
+      invalidate()
+      return
     }
-  }, [object, camera, controls, partFile])
+
+    if (!fitRef.current) return
+
+    // R3F resets orthographic bounds from viewport pixels; reapply world-space frustum.
+    applyOrthographicFrustum(ortho, fitRef.current.baseHalfHeight, aspect, ortho.zoom, fitRef.current.farDistance)
+  })
+
   return null
 }
 
-function LDrawPartMesh({ url, partFile }: { url: string; partFile: string }) {
+function LDrawPartMesh({
+  url,
+  partFile,
+  onInstance,
+}: {
+  url: string
+  partFile: string
+  onInstance?: (object: THREE.Object3D | null) => void
+}) {
   const result = useLoader(EditorLDrawLoader as unknown as typeof THREE.Loader, url, (loader) => {
     ;(loader as unknown as { setConditionalLineMaterial: (m: unknown) => void }).setConditionalLineMaterial(
       LDrawConditionalLineMaterial,
@@ -89,10 +130,12 @@ function LDrawPartMesh({ url, partFile }: { url: string; partFile: string }) {
   }, [result, partFile])
 
   useEffect(() => {
+    onInstance?.(instance)
     return () => {
+      onInstance?.(null)
       disposePlacedPartInstance(instance as never)
     }
-  }, [instance])
+  }, [instance, onInstance])
 
   return <primitive object={instance} />
 }
@@ -114,10 +157,13 @@ function SnapScene({
   const selectSnap = useEditorStore((s) => s.selectSnap)
   const updateSnapLive = useEditorStore((s) => s.updateSnapLive)
   const beginTransform = useEditorStore((s) => s.beginTransform)
+  const pendingPlacement = useEditorStore((s) => s.pendingPlacement)
 
   const url = partGeometryUrl(partFile)
   const selected = snaps.find((s) => s.id === selectedSnapId) ?? null
-  const [root, setRoot] = useState<THREE.Group | null>(null)
+  // Fit camera to part geometry only — never include snap overlays/gizmos,
+  // otherwise dragging a snap outside the brick reframes/zooms the view.
+  const [partGeometry, setPartGeometry] = useState<THREE.Object3D | null>(null)
 
   const visibleSnaps = snaps.filter((s) => {
     const g = snapGender(s)
@@ -128,7 +174,7 @@ function SnapScene({
 
   return (
     // LDraw Y-down → Three.js Y-up (same as Instruction Builder StepPreview)
-    <group rotation={[Math.PI, 0, 0]} ref={setRoot}>
+    <group rotation={[Math.PI, 0, 0]}>
       <Suspense
         fallback={
           <Html center>
@@ -136,7 +182,7 @@ function SnapScene({
           </Html>
         }
       >
-        <LDrawPartMesh url={url} partFile={partFile} />
+        <LDrawPartMesh url={url} partFile={partFile} onInstance={setPartGeometry} />
       </Suspense>
 
       {visibleSnaps.map((snap) => (
@@ -149,7 +195,7 @@ function SnapScene({
         />
       ))}
 
-      {selected && (
+      {selected && !pendingPlacement && (
         <SnapGizmo
           snap={selected}
           mode={gizmoMode}
@@ -162,13 +208,16 @@ function SnapScene({
         />
       )}
 
-      <FitCamera object={root} partFile={partFile} />
+      <PlaceSnapTool />
+
+      <FitCamera object={partGeometry} partFile={partFile} />
     </group>
   )
 }
 
 export function PartViewer({ gizmoMode }: { gizmoMode: 'translate' | 'rotate' }) {
   const partFile = useEditorStore((s) => s.partFile)
+  const pendingPlacement = useEditorStore((s) => s.pendingPlacement)
   const [rotateDrag, setRotateDrag] = useState<RotateDragInfo | null>(null)
 
   useEffect(() => {
@@ -184,11 +233,15 @@ export function PartViewer({ gizmoMode }: { gizmoMode: 'translate' | 'rotate' })
   }
 
   return (
-    <div className="viewer-root">
+    <div className={`viewer-root${pendingPlacement ? ' viewer-placing' : ''}`}>
       <Canvas
         className="part-canvas"
-        camera={{ position: [120, 90, 120], fov: 45, near: 0.1, far: 10000 }}
-        onPointerMissed={() => useEditorStore.getState().selectSnap(null)}
+        orthographic
+        camera={{ position: [120, 90, 120], zoom: 1, near: -10000, far: 10000 }}
+        onPointerMissed={() => {
+          if (useEditorStore.getState().pendingPlacement) return
+          useEditorStore.getState().selectSnap(null)
+        }}
       >
         <color attach="background" args={['#0b1220']} />
         <ambientLight intensity={0.85} />
@@ -199,9 +252,43 @@ export function PartViewer({ gizmoMode }: { gizmoMode: 'translate' | 'rotate' })
           gizmoMode={gizmoMode}
           onRotateDrag={setRotateDrag}
         />
-        <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
+        <OrbitControls
+          makeDefault
+          enableDamping={false}
+          minZoom={0.25}
+          maxZoom={8}
+          // LMB selects / places only — never moves the camera.
+          // MMB pan, wheel zoom, RMB rotate.
+          enableRotate
+          mouseButtons={{
+            LEFT: undefined as unknown as THREE.MOUSE,
+            MIDDLE: THREE.MOUSE.PAN,
+            RIGHT: THREE.MOUSE.ROTATE,
+          }}
+        />
+        <CanvasPointerBindings />
+        <CameraSyncBridge />
       </Canvas>
+      <CameraViewCube />
       <RotateAngleHud gizmoMode={gizmoMode} dragInfo={rotateDrag} />
+      <SnapTargetHud gizmoMode={gizmoMode} />
+      {pendingPlacement && (
+        <div className="place-snap-hud" aria-live="polite">
+          Left-click to place · Middle-drag pan · Right-drag rotate · Esc to cancel
+        </div>
+      )}
     </div>
   )
+}
+
+/** Suppress browser context menu so RMB can rotate the view. */
+function CanvasPointerBindings() {
+  const gl = useThree((s) => s.gl)
+  useEffect(() => {
+    const el = gl.domElement
+    const onContextMenu = (e: Event) => e.preventDefault()
+    el.addEventListener('contextmenu', onContextMenu)
+    return () => el.removeEventListener('contextmenu', onContextMenu)
+  }, [gl])
+  return null
 }

@@ -1,4 +1,5 @@
 import { defineConfig, type Plugin } from 'vitest/config'
+import { loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
 import {
@@ -13,11 +14,11 @@ import {
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const IB_PUBLIC = path.resolve(__dirname, '../instruction-builder/public')
-const LDRAW_PARTS = path.join(IB_PUBLIC, 'ldraw-parts')
-const CONNECTIVITY_ROOT = path.join(IB_PUBLIC, 'ldcad-parts-connectivity')
-/** Always-writable overlay inside this workspace (used when IB public is not writable). */
-const CONNECTIVITY_OVERLAY = path.resolve(__dirname, 'connectivity-overrides')
+
+function resolveConfiguredPath(raw: string | undefined, fallbackRelative: string): string {
+  const value = (raw ?? fallbackRelative).trim()
+  return path.isAbsolute(value) ? value : path.resolve(__dirname, value)
+}
 
 function atomicWrite(dest: string, body: string): void {
   mkdirSync(path.dirname(dest), { recursive: true })
@@ -26,19 +27,9 @@ function atomicWrite(dest: string, body: string): void {
   renameSync(tmp, dest)
 }
 
-function shadowExists(partFile: string): boolean {
-  return (
-    existsSync(path.join(CONNECTIVITY_OVERLAY, 'parts', partFile)) ||
-    existsSync(path.join(CONNECTIVITY_ROOT, 'parts', partFile))
-  )
-}
-
 function isSafeRelativeDatPath(rel: string): boolean {
   if (!rel || rel.includes('\0')) return false
   const normalized = path.normalize(rel).replace(/^(\.\.(\/|\\|$))+/, '')
-  if (normalized !== rel.replace(/\\/g, '/') && normalized !== path.normalize(rel)) {
-    // allow path.normalize collapsing of ./ segments
-  }
   if (normalized.startsWith('..') || path.isAbsolute(normalized)) return false
   if (!normalized.toLowerCase().endsWith('.dat')) return false
   return true
@@ -85,34 +76,10 @@ function serveStaticDir(urlPrefix: string, rootDir: string): Plugin {
   }
 }
 
-function serveConnectivityOverlayFirst(): Plugin {
-  return {
-    name: 'serve-connectivity-overlay-first',
-    configureServer(server) {
-      server.middlewares.use('/ldcad-parts-connectivity', (req, res, _next) => {
-        const cleanUrl = (req.url ?? '').split('?')[0]
-        const overlayPath = resolveUnderRoot(CONNECTIVITY_OVERLAY, cleanUrl)
-        const basePath = resolveUnderRoot(CONNECTIVITY_ROOT, cleanUrl)
-        const filePath =
-          overlayPath && existsSync(overlayPath) && !statSync(overlayPath).isDirectory()
-            ? overlayPath
-            : basePath && existsSync(basePath) && !statSync(basePath).isDirectory()
-              ? basePath
-              : null
-        if (!filePath) {
-          res.statusCode = 404
-          res.end('Not Found')
-          return
-        }
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8')
-        res.setHeader('Cache-Control', 'no-cache')
-        createReadStream(filePath).pipe(res)
-      })
-    },
-  }
-}
+function connectivityApiPlugin(ldrawParts: string, shadowLibrary: string): Plugin {
+  const shadowExists = (partFile: string) =>
+    existsSync(path.join(shadowLibrary, 'parts', partFile))
 
-function connectivityApiPlugin(): Plugin {
   return {
     name: 'connectivity-api',
     configureServer(server) {
@@ -128,7 +95,7 @@ function connectivityApiPlugin(): Plugin {
             res.end(JSON.stringify({ results: [] }))
             return
           }
-          const partsDir = path.join(LDRAW_PARTS, 'parts')
+          const partsDir = path.join(ldrawParts, 'parts')
           const results: Array<{ partFile: string; hasShadow: boolean }> = []
           try {
             const files = readdirSync(partsDir)
@@ -157,7 +124,7 @@ function connectivityApiPlugin(): Plugin {
             res.end('Bad Request')
             return
           }
-          const geometryExists = existsSync(path.join(LDRAW_PARTS, 'parts', partFile))
+          const geometryExists = existsSync(path.join(ldrawParts, 'parts', partFile))
           res.setHeader('Content-Type', 'application/json')
           res.end(
             JSON.stringify({
@@ -182,9 +149,8 @@ function connectivityApiPlugin(): Plugin {
             res.end('Writes only allowed under parts/')
             return
           }
-          const ibDest = path.resolve(CONNECTIVITY_ROOT, rel)
-          const overlayDest = path.resolve(CONNECTIVITY_OVERLAY, rel)
-          if (!ibDest.startsWith(CONNECTIVITY_ROOT) || !overlayDest.startsWith(CONNECTIVITY_OVERLAY)) {
+          const shadowDest = path.resolve(shadowLibrary, rel)
+          if (!shadowDest.startsWith(shadowLibrary)) {
             res.statusCode = 400
             res.end('Invalid path')
             return
@@ -201,29 +167,15 @@ function connectivityApiPlugin(): Plugin {
                 return
               }
 
-              let wroteToIb = false
-              let writeError: string | null = null
-              try {
-                atomicWrite(ibDest, body)
-                wroteToIb = true
-              } catch (err) {
-                writeError = String(err)
-              }
-
-              // Always mirror into the workspace overlay so the running editor
-              // can re-read the saved file even when IB public is not writable.
-              atomicWrite(overlayDest, body)
+              atomicWrite(shadowDest, body)
 
               res.setHeader('Content-Type', 'application/json')
               res.end(
                 JSON.stringify({
                   ok: true,
                   path: rel,
-                  wroteToInstructionBuilder: wroteToIb,
-                  overlayPath: `connectivity-overrides/${rel}`,
-                  warning: wroteToIb
-                    ? undefined
-                    : `Could not write to Instruction Builder library (${writeError}). Saved to connectivity-overrides/ instead — copy into IB public when ready.`,
+                  wroteToShadowLibrary: true,
+                  shadowPath: shadowDest,
                 }),
               )
             } catch (err) {
@@ -240,35 +192,43 @@ function connectivityApiPlugin(): Plugin {
   }
 }
 
-export default defineConfig({
-  plugins: [
-    react(),
-    serveStaticDir('/ldraw-parts', LDRAW_PARTS),
-    serveConnectivityOverlayFirst(),
-    connectivityApiPlugin(),
-  ],
-  resolve: {
-    dedupe: ['three', '@types/three'],
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
-      '@eb/ldraw-models': path.resolve(__dirname, '../eb-ldraw-toolkit/packages/ldraw-models/src/index.ts'),
-      '@eb/ldraw-parser': path.resolve(__dirname, '../eb-ldraw-toolkit/packages/ldraw-parser/src/index.ts'),
-      '@eb/ldraw-three-core': path.resolve(__dirname, '../eb-ldraw-toolkit/packages/ldraw-three-core/src/index.ts'),
-      three: path.resolve(__dirname, 'node_modules/three'),
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, __dirname, '')
+  const IB_PUBLIC = resolveConfiguredPath(env.LDRAW_PARTS_ROOT, '../instruction-builder/public')
+  const LDRAW_PARTS = path.join(IB_PUBLIC, env.LDRAW_PARTS_SUBDIR?.trim() || 'ldraw-parts')
+  const SHADOW_LIBRARY = resolveConfiguredPath(env.LDCAD_SHADOW_LIBRARY, '../LDCadShadowLibrary')
+
+  return {
+    plugins: [
+      react(),
+      serveStaticDir('/ldraw-parts', LDRAW_PARTS),
+      serveStaticDir('/ldcad-parts-connectivity', SHADOW_LIBRARY),
+      connectivityApiPlugin(LDRAW_PARTS, SHADOW_LIBRARY),
+    ],
+    resolve: {
+      dedupe: ['three', '@types/three'],
+      alias: {
+        '@': path.resolve(__dirname, 'src'),
+        '@eb/ldraw-models': path.resolve(__dirname, '../eb-ldraw-toolkit/packages/ldraw-models/src/index.ts'),
+        '@eb/ldraw-parser': path.resolve(__dirname, '../eb-ldraw-toolkit/packages/ldraw-parser/src/index.ts'),
+        '@eb/ldraw-three-core': path.resolve(__dirname, '../eb-ldraw-toolkit/packages/ldraw-three-core/src/index.ts'),
+        three: path.resolve(__dirname, 'node_modules/three'),
+      },
     },
-  },
-  server: {
-    fs: {
-      allow: [
-        __dirname,
-        path.resolve(__dirname, '../eb-ldraw-toolkit'),
-        IB_PUBLIC,
-      ],
+    server: {
+      fs: {
+        allow: [
+          __dirname,
+          path.resolve(__dirname, '../eb-ldraw-toolkit'),
+          IB_PUBLIC,
+          SHADOW_LIBRARY,
+        ],
+      },
     },
-  },
-  test: {
-    globals: true,
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
-  },
+    test: {
+      globals: true,
+      environment: 'node',
+      include: ['src/**/*.test.ts'],
+    },
+  }
 })
