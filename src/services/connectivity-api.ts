@@ -1,10 +1,13 @@
 import {
   normalizePartFile,
+  parseShadowFileHeader,
   resolvePartConnectivityForEditor,
   resolvePartGeometryFeatures,
   serializeFlattenedConnectivity,
   type ConnectivityFileLoader,
   type GeometryFeature,
+  type ShadowFileHeader,
+  type SerializeFlattenedOptions,
 } from '@eb/ldraw-parser'
 
 function normalizeInput(raw: string): string {
@@ -35,6 +38,18 @@ export async function fetchPartStatus(partFile: string): Promise<{
   return res.json()
 }
 
+async function fetchShadowHeader(partFile: string): Promise<ShadowFileHeader | null> {
+  try {
+    const res = await fetch(`/ldcad-parts-connectivity/parts/${partFile}`)
+    if (!res.ok || res.headers.get('content-type')?.includes('text/html')) return null
+    const text = await res.text()
+    if (!text.includes('!LDCAD') && !/LDCad shadow info/i.test(text)) return null
+    return parseShadowFileHeader(text)
+  } catch {
+    return null
+  }
+}
+
 export async function loadPartConnectivity(partFile: string) {
   const normalized = normalizeInput(partFile)
   const status = await fetchPartStatus(normalized)
@@ -45,11 +60,15 @@ export async function loadPartConnectivity(partFile: string) {
     resolvePartConnectivityForEditor(normalized, fileLoader),
     resolvePartGeometryFeatures(normalized, fileLoader),
   ])
+  const hadShadowFile = resolved.hadShadowFile || status.hasShadow
+  const shadowHeader = hadShadowFile ? await fetchShadowHeader(normalized) : null
   return {
     partFile: normalized,
     snaps: resolved.snaps,
-    hadShadowFile: resolved.hadShadowFile || status.hasShadow,
+    hadShadowFile,
     geometryFeatures,
+    shadowHeader,
+    partName: shadowHeader?.partName ?? undefined,
   }
 }
 
@@ -58,15 +77,24 @@ export async function loadPartGeometryFeatures(partFile: string): Promise<Geomet
   return resolvePartGeometryFeatures(normalized, fileLoader)
 }
 
-export function buildSaveContent(
-  partFile: string,
-  partName: string,
-  snaps: Parameters<typeof serializeFlattenedConnectivity>[0]['snaps'],
-): string {
+export function buildSaveContent(options: {
+  partFile: string
+  partName: string
+  snaps: SerializeFlattenedOptions['snaps']
+  shadowHeader?: ShadowFileHeader | null
+  isNewShadow: boolean
+}): string {
+  const { partFile, partName, snaps, shadowHeader, isNewShadow } = options
   return serializeFlattenedConnectivity({
     partFile,
     partName,
     snaps,
+    author: shadowHeader?.author ?? 'Part Connectivity Editor',
+    license: shadowHeader?.license ?? 'CC BY-SA 4.0, see LICENSE.md',
+    existingHistory: shadowHeader?.history ?? [],
+    historyNote: isNewShadow
+      ? `Initial connectivity for ${partFile}`
+      : `Edited connectivity for ${partFile}`,
   })
 }
 

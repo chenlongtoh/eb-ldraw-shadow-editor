@@ -1,5 +1,5 @@
 import type { LDrawSnapRecord, LDrawSourcedSnapRecord, SnapGender, SnapMetaType } from '@eb/ldraw-models'
-import type { GeometryFeature } from '@eb/ldraw-parser'
+import type { GeometryFeature, ShadowFileHeader } from '@eb/ldraw-parser'
 import { create } from 'zustand'
 
 export type EditableSnap = LDrawSourcedSnapRecord & {
@@ -19,6 +19,8 @@ export interface EditorSnapState {
   error: string | null
   status: ConnectivityStatus
   hadShadowFile: boolean
+  /** Parsed header from the existing shadow file (null for brand-new shadows). */
+  shadowHeader: ShadowFileHeader | null
   showMale: boolean
   showFemale: boolean
   showSourceLabels: boolean
@@ -57,7 +59,9 @@ export interface EditorSnapActions {
     snaps: LDrawSourcedSnapRecord[]
     hadShadowFile: boolean
     geometryFeatures?: GeometryFeature[]
+    shadowHeader?: ShadowFileHeader | null
   }) => void
+  setPartName: (name: string) => void
   selectSnap: (id: string | null) => void
   updateSnap: (id: string, patch: Partial<LDrawSnapRecord>) => void
   /** Update without pushing undo history (used during gizmo drag). */
@@ -145,6 +149,7 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
   error: null,
   status: 'unknown',
   hadShadowFile: false,
+  shadowHeader: null,
   showMale: true,
   showFemale: true,
   showSourceLabels: false,
@@ -162,7 +167,7 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
 
-  loadPart: ({ partFile, partName, snaps, hadShadowFile, geometryFeatures = [] }) => {
+  loadPart: ({ partFile, partName, snaps, hadShadowFile, geometryFeatures = [], shadowHeader = null }) => {
     const editable: EditableSnap[] = snaps.map((s) => ({
       ...s,
       id: newId(),
@@ -171,15 +176,20 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
       slide: s.slide ?? false,
       center: s.center ?? false,
     }))
+    const resolvedName =
+      shadowHeader?.partName?.trim()
+      || partName?.trim()
+      || (hadShadowFile ? partFile : null)
     set({
       partFile,
-      partName: partName ?? partFile,
+      partName: resolvedName,
       snaps: editable,
       selectedSnapId: null,
       dirty: false,
       loading: false,
       error: null,
       hadShadowFile,
+      shadowHeader: hadShadowFile ? shadowHeader : null,
       status: inferStatus(editable.length, hadShadowFile),
       past: [],
       future: [],
@@ -190,6 +200,8 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
       pendingPose: null,
     })
   },
+
+  setPartName: (name) => set({ partName: name, dirty: true }),
 
   selectSnap: (id) => set({ selectedSnapId: id, snapTargetFeatureId: null }),
 

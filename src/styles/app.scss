@@ -643,6 +643,18 @@ select {
   margin-top: 0.6rem;
 }
 
+.save-name-prompt {
+  margin-top: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.save-name-locked {
+  margin: 0.55rem 0 0;
+  font-size: 0.85rem;
+}
+
 .save-preview pre {
   background: #0b1220;
   border: 1px solid var(--border);
