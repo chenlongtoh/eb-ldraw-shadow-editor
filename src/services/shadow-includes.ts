@@ -17,7 +17,7 @@ import {
 } from '@eb/ldraw-parser'
 
 const BUNDLED_PARTS_BASE_PATH = '/ldraw-parts'
-const CONNECTIVITY_BASE_PATH = '/ldcad-parts-connectivity'
+const CONNECTIVITY_BASE_PATH = '/ldraw-connectivity'
 const MAX_NEST_DEPTH = 100
 
 const IDENTITY_ORI: LDrawPartConnectivityInclude['orientation'] = [1, 0, 0, 0, 1, 0, 0, 0, 1]

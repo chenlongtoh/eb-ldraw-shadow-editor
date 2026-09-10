@@ -22,7 +22,18 @@ import { serializeInclude } from './shadow-includes'
 
 const SNAP_META_RE = /^0\s+!LDCAD\s+SNAP_/i
 const HISTORY_RE = /^0\s+!HISTORY\b/i
+const AUTHOR_VALUE_RE = /^0\s+Author:\s*(.+)\s*$/i
+const LICENSE_VALUE_RE = /^0\s+!LICENSE\s+(.+)\s*$/i
 const GEOM_SNAP_TYPES = new Set(['SNAP_CYL', 'SNAP_CLP', 'SNAP_FGR', 'SNAP_GEN', 'SNAP_SPH'])
+
+export interface ShadowFileHeader {
+  /** Text inside `0 LDCad shadow info for "…"`. */
+  partName: string | null
+  author: string | null
+  license: string | null
+  /** Verbatim `0 !HISTORY …` lines in file order. */
+  history: string[]
+}
 
 export type SaveDefinitionMode = 'inherit' | 'flatten'
 
@@ -114,6 +125,40 @@ export function extractShadowBody(shadowText: string): string[] {
 }
 
 const SHADOW_TITLE_RE = /^(0\s+LDCad shadow info for\s+")([^"]*)(")\s*$/i
+
+/** Extract display name / author / license / history from an existing shadow file. */
+export function parseShadowFileHeader(content: string): ShadowFileHeader {
+  let partName: string | null = null
+  let author: string | null = null
+  let license: string | null = null
+  const history: string[] = []
+
+  for (const raw of content.split('\n')) {
+    const trimmed = raw.trim()
+    if (!trimmed) continue
+
+    const titleMatch = SHADOW_TITLE_RE.exec(trimmed)
+    if (titleMatch) {
+      partName = titleMatch[2]
+      continue
+    }
+    const authorMatch = AUTHOR_VALUE_RE.exec(trimmed)
+    if (authorMatch) {
+      author = authorMatch[1].trim()
+      continue
+    }
+    const licenseMatch = LICENSE_VALUE_RE.exec(trimmed)
+    if (licenseMatch) {
+      license = licenseMatch[1].trim()
+      continue
+    }
+    if (HISTORY_RE.test(trimmed)) {
+      history.push(trimmed)
+    }
+  }
+
+  return { partName, author, license, history }
+}
 
 /** Append `{unofficial}` to the title and the first HISTORY line only. */
 export function applyUnofficialToPreamble(preamble: string[]): string[] {

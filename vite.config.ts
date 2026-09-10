@@ -250,11 +250,10 @@ function localEbToolkitAliases(): Record<string, string> {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '')
-  const IB_PUBLIC = resolveConfiguredPath(env.LDRAW_PARTS_ROOT, '../instruction-builder/public')
-  const LDRAW_PARTS = path.join(IB_PUBLIC, env.LDRAW_PARTS_SUBDIR?.trim() || 'ldraw-parts')
-  const SHADOW_LIBRARY = resolveConfiguredPath(env.LDCAD_SHADOW_LIBRARY, '../LDCadShadowLibrary')
+  const LDRAW_PARTS = resolveConfiguredPath(env.LDRAW_PARTS, 'public/ldraw-parts')
+  const CONNECTIVITY = path.resolve(__dirname, 'public/ldraw-connectivity')
   const ebAliases = localEbToolkitAliases()
-  const allowedFs = [__dirname, IB_PUBLIC, SHADOW_LIBRARY]
+  const allowedFs = [__dirname, LDRAW_PARTS, CONNECTIVITY]
   if (Object.keys(ebAliases).length > 0) {
     allowedFs.push(path.resolve(__dirname, '../eb-ldraw-toolkit'))
   }
@@ -263,8 +262,8 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       serveStaticDir('/ldraw-parts', LDRAW_PARTS),
-      serveStaticDir('/ldcad-parts-connectivity', SHADOW_LIBRARY),
-      connectivityApiPlugin(LDRAW_PARTS, SHADOW_LIBRARY),
+      serveStaticDir('/ldraw-connectivity', CONNECTIVITY),
+      connectivityApiPlugin(LDRAW_PARTS, CONNECTIVITY),
     ],
     resolve: {
       dedupe: ['three', '@types/three'],

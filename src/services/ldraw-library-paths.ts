@@ -19,7 +19,7 @@ export function geometryUrlCandidates(partFile: string): string[] {
 }
 
 export function shadowUrlCandidates(partFile: string): string[] {
-  return libraryRelCandidates(partFile).map((rel) => `/ldcad-parts-connectivity/${rel}`)
+  return libraryRelCandidates(partFile).map((rel) => `/ldraw-connectivity/${rel}`)
 }
 
 /** Best-effort geometry URL when the status probe is unavailable. */

@@ -5,7 +5,8 @@ import type {
   SnapGender,
   SnapMetaType,
 } from '@eb/ldraw-models'
-import type { GeometryFeature, ShadowFileHeader } from '@eb/ldraw-parser'
+import type { GeometryFeature } from '@eb/ldraw-parser'
+import type { ShadowFileHeader } from '../services/shadow-save'
 import { create } from 'zustand'
 import { isOwnSnap } from '../services/snap-ownership'
 import type { PartPrimitiveRef } from '../services/part-children'

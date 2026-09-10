@@ -3,9 +3,8 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { resolvePartGeometryFeatures } from '@eb/ldraw-parser'
 
-const IB = path.resolve(__dirname, '../../../instruction-builder/public')
-const LDRAW = path.join(IB, 'ldraw-parts')
-const CONN = path.join(IB, 'ldcad-parts-connectivity')
+const LDRAW = path.resolve(__dirname, '../../public/ldraw-parts')
+const CONN = path.resolve(__dirname, '../../public/ldraw-connectivity')
 
 function loadFromDisk(base: string, partFile: string): string | null {
   const candidates = [

@@ -1,16 +1,19 @@
 import {
   normalizePartFile,
-  parseShadowFileHeader,
   resolvePartConnectivityForEditor,
   resolvePartGeometryFeatures,
   type ConnectivityFileLoader,
   type GeometryFeature,
-  type ShadowFileHeader,
-  type SerializeFlattenedOptions,
 } from '@eb/ldraw-parser'
 import type { LDrawPartConnectivityInclude } from '@eb/ldraw-models'
 import { downloadTextFile } from './download-file'
-import { attachOriginLines, buildPreservedShadowContent, type SnapWithOrigin } from './shadow-save'
+import {
+  attachOriginLines,
+  buildPreservedShadowContent,
+  parseShadowFileHeader,
+  type ShadowFileHeader,
+  type SnapWithOrigin,
+} from './shadow-save'
 import { collectNewShadowIncludes } from './shadow-includes'
 import {
   fallbackGeometryUrl,
@@ -25,7 +28,27 @@ function normalizeInput(raw: string): string {
   return normalizePartFile(s)
 }
 
-const fileLoader: ConnectivityFileLoader = {}
+async function fetchFirstText(urls: string[]): Promise<string | null> {
+  for (const url of urls) {
+    try {
+      const res = await fetch(url)
+      if (!res.ok || res.headers.get('content-type')?.includes('text/html')) continue
+      return (await res.text()).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    } catch {
+      /* try next */
+    }
+  }
+  return null
+}
+
+const fileLoader: ConnectivityFileLoader & {
+  hasConnectivityFile?: (partFile: string) => Promise<boolean>
+} = {
+  loadPartFileContent: (partFile) => fetchFirstText(geometryUrlCandidates(partFile)),
+  loadConnectivityContent: (partFile) => fetchFirstText(shadowUrlCandidates(partFile)),
+  hasConnectivityFile: async (partFile) =>
+    (await fetchFirstText(shadowUrlCandidates(partFile))) != null,
+}
 
 export async function searchParts(query: string): Promise<Array<{ partFile: string; hasShadow: boolean }>> {
   const q = query.trim()
@@ -71,19 +94,6 @@ export async function fetchPartPrimitives(partFile: string): Promise<PartPrimiti
   if (!res.ok) throw new Error(`Primitives failed: ${res.status}`)
   const data = (await res.json()) as { children?: PartPrimitiveRef[] }
   return data.children ?? []
-}
-
-async function fetchFirstText(urls: string[]): Promise<string | null> {
-  for (const url of urls) {
-    try {
-      const res = await fetch(url)
-      if (!res.ok || res.headers.get('content-type')?.includes('text/html')) continue
-      return (await res.text()).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-    } catch {
-      /* try next */
-    }
-  }
-  return null
 }
 
 /** Fetch raw shadow library text for a part, or null if missing / not a shadow file. */
@@ -258,4 +268,4 @@ export function partGeometryUrl(partFile: string, knownUrl?: string | null): str
   return knownUrl || fallbackGeometryUrl(partFile)
 }
 
-export type { SerializeFlattenedOptions, SnapWithOrigin, PartPrimitiveRef }
+export type { SnapWithOrigin, PartPrimitiveRef, ShadowFileHeader }

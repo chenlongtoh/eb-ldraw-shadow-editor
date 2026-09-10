@@ -1,0 +1,6 @@
+[submodule "public/ldraw-parts"]
+	path = public/ldraw-parts
+	url = https://github.com/chenlongtoh/ldraw-parts.git
+[submodule "public/ldraw-connectivity"]
+	path = public/ldraw-connectivity
+	url = https://github.com/chenlongtoh/LDCadShadowLibrary.git

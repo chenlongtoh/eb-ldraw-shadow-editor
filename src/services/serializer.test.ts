@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  parseConnectivityFile,
-  parseShadowFileHeader,
-  serializeFlattenedConnectivity,
-  serializeSnapRecord,
-} from '@eb/ldraw-parser'
+import { parseConnectivityFile, serializeSnapRecord } from '@eb/ldraw-parser'
+import { buildPreservedShadowContent, parseShadowFileHeader } from './shadow-save'
 
 describe('LDCad snap serializer round-trip', () => {
   it('preserves CYL fields', () => {
@@ -23,12 +19,15 @@ describe('LDCad snap serializer round-trip', () => {
     const snaps = parseConnectivityFile(
       '0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 6 4]',
       'x.dat',
-    ).snaps
-    const text = serializeFlattenedConnectivity({
+    ).snaps.map((snap) => ({ ...snap, sourceFile: '3003.dat' }))
+    const text = buildPreservedShadowContent({
       partFile: '3003.dat',
       partName: 'Brick 2 x 2',
       snaps,
+      isNewShadow: true,
       historyNote: 'Initial info for 3003.dat',
+      editorName: 'Part Connectivity Editor',
+      mode: 'flatten',
     })
     expect(text).toContain('0 !LDCAD SNAP_CLEAR')
     expect(text).toContain('0 LDCad shadow info for "Brick 2 x 2"')
@@ -42,13 +41,15 @@ describe('LDCad snap serializer round-trip', () => {
     const snaps = parseConnectivityFile(
       '0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 6 4]',
       'x.dat',
-    ).snaps
-    const text = serializeFlattenedConnectivity({
+    ).snaps.map((snap) => ({ ...snap, sourceFile: '3003.dat' }))
+    const text = buildPreservedShadowContent({
       partFile: '3003.dat',
       partName: 'Brick 2 x 2',
       snaps,
+      isNewShadow: true,
       editorName: 'Ada Lovelace',
       historyNote: 'Initial info for 3003.dat',
+      mode: 'flatten',
     })
     expect(text).toMatch(
       /0 !HISTORY \d{4}-\d{2}-\d{2} \{Ada Lovelace\} Initial info for 3003\.dat/,
@@ -75,16 +76,18 @@ describe('LDCad snap serializer round-trip', () => {
     const snaps = parseConnectivityFile(
       '0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 6 4]',
       'x.dat',
-    ).snaps
-    const text = serializeFlattenedConnectivity({
+    ).snaps.map((snap) => ({ ...snap, sourceFile: '3003.dat' }))
+    const text = buildPreservedShadowContent({
       partFile: '3003.dat',
       partName: header.partName!,
       snaps,
+      shadowSourceText: existing,
+      isNewShadow: false,
       author: header.author ?? undefined,
       license: header.license ?? undefined,
-      existingHistory: header.history,
       historyNote: 'Edited connectivity for 3003.dat',
       editorName: 'Part Connectivity Editor',
+      mode: 'flatten',
     })
     expect(text).toContain('0 LDCad shadow info for "Brick  2 x  2"')
     expect(text).toContain('0 Author: LDCad Shadow Library')

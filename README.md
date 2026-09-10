@@ -5,23 +5,18 @@ EasternBrick tool to visualize and edit LDCad snap connectivity on LDraw part ge
 ## Setup
 
 ```bash
+git submodule update --init public/ldraw-parts public/ldraw-connectivity
 npm install
 npm run dev
 ```
 
-Reads LDraw parts from `../instruction-builder/public/ldraw-parts` and **reads/writes** connectivity exclusively from `../LDCadShadowLibrary` (no Instruction Builder connectivity fallback).
+Reads LDraw parts from `public/ldraw-parts` and **reads/writes** connectivity from `public/ldraw-connectivity`.
 
-Configure paths in `.env` (see `.env.example`):
-
-```bash
-LDCAD_SHADOW_LIBRARY=../LDCadShadowLibrary
-```
-
-On save, writes flattened shadow `.dat` files to `$LDCAD_SHADOW_LIBRARY/parts/`.
+On save, writes shadow `.dat` files to `public/ldraw-connectivity/parts/`. Deployed/static hosts cannot write that tree, so Save downloads the file instead.
 
 ## Usage
 
 1. Enter a part ID (e.g. `3003`) and click **Load**
 2. Inspect snap overlays on the mesh (blue = male CYL, orange = female)
 3. Add snaps from templates, move/rotate with the gizmo, edit properties
-4. **Save…** → confirm to write `SNAP_CLEAR` + flattened snap lines
+4. **Save…** → confirm to write into the connectivity submodule
