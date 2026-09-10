@@ -62,7 +62,7 @@ export function SavePanel() {
     )
   }, [partFile, hadShadowFile, isUnofficial, partName, editorName, isNewShadow, shadowHeader])
 
-  const resolvedEditor = editorDraft.trim() || 'Part Connectivity Editor'
+  const resolvedEditor = editorDraft.trim() || 'John Doe'
   const resolvedAuthor = authorDraft.trim() || 'LDCad Shadow Library'
   const resolvedName = isNewShadow
     ? nameDraft.trim()
@@ -225,17 +225,30 @@ export function SavePanel() {
       <div className="save-panel-body">
         <div className="save-modal-fields">
           <label className="field">
+            <span>Author</span>
+            <input
+              type="text"
+              value={authorDraft}
+              onChange={(e) => setAuthorDraft(e.target.value)}
+              placeholder="LDCad Shadow Library"
+            />
+            <span className="field-hint">
+              Written as <code>0 Author: …</code>
+            </span>
+          </label>
+
+          <label className="field">
             <span>Editor name</span>
             <input
               type="text"
               value={editorDraft}
               onChange={(e) => setEditorDraft(e.target.value)}
               onBlur={() => {
-                const t = editorDraft.trim() || 'Part Connectivity Editor'
+                const t = editorDraft.trim() || 'John Doe'
                 setEditorDraft(t)
                 setEditorName(t)
               }}
-              placeholder="Part Connectivity Editor"
+              placeholder="John Doe"
             />
             <span className="field-hint">Used in HISTORY lines.</span>
           </label>
@@ -277,19 +290,6 @@ export function SavePanel() {
               </span>
             </label>
           )}
-
-          <label className="field">
-            <span>Author</span>
-            <input
-              type="text"
-              value={authorDraft}
-              onChange={(e) => setAuthorDraft(e.target.value)}
-              placeholder="LDCad Shadow Library"
-            />
-            <span className="field-hint">
-              Written as <code>0 Author: …</code>
-            </span>
-          </label>
 
           <label className="field">
             <span>History message</span>

@@ -432,7 +432,7 @@ export function buildPreservedShadowContent(options: {
   } = options
 
   const today = new Date().toISOString().slice(0, 10)
-  const editor = editorName.trim() || 'Part Connectivity Editor'
+  const editor = editorName.trim() || 'John Doe'
   const newHistory = `0 !HISTORY ${today} {${editor}} ${historyNote}`
 
   if (mode === 'flatten') {

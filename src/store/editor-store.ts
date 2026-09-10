@@ -23,14 +23,16 @@ export type ConnectivityStatus = 'missing' | 'partial' | 'ok' | 'unknown'
 
 export type PartNavMode = 'root' | 'child' | 'back' | 'keep'
 
-const DEFAULT_EDITOR_NAME = 'Part Connectivity Editor'
+const DEFAULT_EDITOR_NAME = 'John Doe'
 const EDITOR_NAME_STORAGE_KEY = 'pce.editorName'
+const LEGACY_EDITOR_NAME = 'Part Connectivity Editor'
 
 function readEditorName(): string {
   try {
     const stored = sessionStorage.getItem(EDITOR_NAME_STORAGE_KEY)
     const trimmed = stored?.trim()
-    return trimmed || DEFAULT_EDITOR_NAME
+    if (!trimmed || trimmed === LEGACY_EDITOR_NAME) return DEFAULT_EDITOR_NAME
+    return trimmed
   } catch {
     return DEFAULT_EDITOR_NAME
   }
