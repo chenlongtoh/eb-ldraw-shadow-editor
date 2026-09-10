@@ -1,7 +1,14 @@
 import { useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
+import { ACCENT_BLUE, ACCENT_SOFT, ACCENT_VIVID, useUiTheme, type UiAccentPreference } from '../theme/ui-theme'
 import { cameraSync, requestCameraTween } from './camera-sync'
+
+const ACCENT_HEX: Record<UiAccentPreference, string> = {
+  vivid: ACCENT_VIVID,
+  soft: ACCENT_SOFT,
+  blue: ACCENT_BLUE,
+}
 
 export const VIEW_CUBE_FACES = ['Right', 'Left', 'Top', 'Bottom', 'Front', 'Back'] as const
 
@@ -15,12 +22,10 @@ const FACE_NORMALS: THREE.Vector3[] = [
 ]
 
 const COLORS = {
-  bg: '#1e293b',
-  active: '#38bdf8',
-  hover: '#475569',
-  text: '#e2e8f0',
-  activeText: '#0b1220',
-  stroke: '#334155',
+  bg: '#1a1a1a',
+  hover: '#404040',
+  text: '#FFFFFF',
+  stroke: '#27272a',
 }
 
 function makeFaceTexture(label: string, bg: string, text: string, stroke: string, font: string): THREE.CanvasTexture {
@@ -52,18 +57,22 @@ function FaceMaterial({
   hover,
   active,
   font,
+  activeColor,
+  activeText,
 }: {
   index: number
   faces: readonly string[]
   hover: boolean
   active: boolean
   font: string
+  activeColor: string
+  activeText: string
 }) {
   const texture = useMemo(() => {
-    const bg = active ? COLORS.active : hover ? COLORS.hover : COLORS.bg
-    const text = active ? COLORS.activeText : COLORS.text
+    const bg = active ? activeColor : hover ? COLORS.hover : COLORS.bg
+    const text = active ? activeText : COLORS.text
     return makeFaceTexture(faces[index], bg, text, COLORS.stroke, font)
-  }, [index, faces, hover, active, font])
+  }, [index, faces, hover, active, font, activeColor, activeText])
 
   return (
     <meshBasicMaterial
@@ -81,10 +90,14 @@ function ViewCubeMesh({
   activeFace,
   faces,
   font,
+  activeColor,
+  activeText,
 }: {
   activeFace: number
   faces: readonly string[]
   font: string
+  activeColor: string
+  activeText: string
 }) {
   const [hover, setHover] = useState<number | null>(null)
 
@@ -119,6 +132,8 @@ function ViewCubeMesh({
           hover={hover === index}
           active={activeFace === index}
           font={font}
+          activeColor={activeColor}
+          activeText={activeText}
         />
       ))}
       <boxGeometry />
@@ -126,7 +141,7 @@ function ViewCubeMesh({
   )
 }
 
-function ViewCubeScene() {
+function ViewCubeScene({ activeColor, activeText }: { activeColor: string; activeText: string }) {
   const groupRef = useRef<THREE.Group>(null)
   const invQuat = useMemo(() => new THREE.Quaternion(), [])
   const viewFrom = useMemo(() => new THREE.Vector3(), [])
@@ -166,7 +181,9 @@ function ViewCubeScene() {
         <ViewCubeMesh
           activeFace={activeFace}
           faces={faces}
-          font="600 18px IBM Plex Sans, sans-serif"
+          font="600 18px Figtree, sans-serif"
+          activeColor={activeColor}
+          activeText={activeText}
         />
       </group>
       <ViewCubeLabel label={viewLabel} />
@@ -182,10 +199,10 @@ function ViewCubeLabel({ label }: { label: string }) {
     const ctx = canvas.getContext('2d')
     if (ctx) {
       ctx.clearRect(0, 0, canvas.width, canvas.height)
-      ctx.font = '600 26px IBM Plex Sans, sans-serif'
+      ctx.font = '600 26px Figtree, sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillStyle = '#94a3b8'
+      ctx.fillStyle = '#FFFFFF'
       ctx.fillText(label, 128, 32)
     }
     return new THREE.CanvasTexture(canvas)
@@ -201,6 +218,10 @@ function ViewCubeLabel({ label }: { label: string }) {
 
 /** Separate overlay canvas — does not touch the main perspective camera. */
 export function CameraViewCube() {
+  const { accent } = useUiTheme()
+  const activeColor = ACCENT_HEX[accent]
+  const activeText = accent === 'blue' ? '#FFFFFF' : '#000000'
+
   return (
     <div className="view-cube-overlay" aria-label="Camera view cube">
       <Canvas
@@ -213,7 +234,7 @@ export function CameraViewCube() {
           gl.setClearColor(0x000000, 0)
         }}
       >
-        <ViewCubeScene />
+        <ViewCubeScene activeColor={activeColor} activeText={activeText} />
       </Canvas>
     </div>
   )

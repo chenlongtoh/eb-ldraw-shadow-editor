@@ -250,7 +250,7 @@ export function PartViewer({ gizmoMode }: { gizmoMode: 'translate' | 'rotate' })
           useEditorStore.getState().selectSnap(null)
         }}
       >
-        <color attach="background" args={['#0b1220']} />
+        <color attach="background" args={['#1a1a1a']} />
         <ambientLight intensity={0.85} />
         <directionalLight position={[80, 120, 60]} intensity={1.1} />
         <directionalLight position={[-40, -60, -80]} intensity={0.35} />

@@ -176,7 +176,7 @@ export function snapColor(
 ): string {
   const locked = options?.locked ?? false
   if (locked && selected) return '#94a3b8'
-  if (selected && !locked) return '#ffffff'
+  if (selected && !locked) return '#B8FF00'
 
   let base: string
   switch (record.metaType) {

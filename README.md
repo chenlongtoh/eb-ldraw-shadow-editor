@@ -1,6 +1,6 @@
-# Part Connectivity Editor
+# LDraw Shadow Editor
 
-Standalone tool to visualize and edit LDCad snap connectivity on LDraw part geometry.
+EasternBrick tool to visualize and edit LDCad snap connectivity on LDraw part geometry.
 
 ## Setup
 

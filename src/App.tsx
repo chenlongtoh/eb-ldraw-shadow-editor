@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
+import { BrandWordmark } from './components/BrandWordmark'
 import { PartSearch } from './components/PartSearch'
 import { SnapList } from './components/SnapList'
 import { SnapTemplatePicker } from './components/SnapTemplatePicker'
 import { SnapPropertyForm } from './components/SnapPropertyForm'
 import { SavePanel } from './components/SavePanel'
+import { ThemeSettingsModal } from './components/ThemeSettingsModal'
 import { PartViewer } from './three/PartViewer'
 import { useEditorStore } from './store/editor-store'
 
@@ -15,6 +17,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 export function App() {
   const [gizmoMode, setGizmoMode] = useState<'translate' | 'rotate'>('translate')
+  const [showSettings, setShowSettings] = useState(false)
   const error = useEditorStore((s) => s.error)
   const showMale = useEditorStore((s) => s.showMale)
   const showFemale = useEditorStore((s) => s.showFemale)
@@ -31,6 +34,7 @@ export function App() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (showSettings) return
       if (isTypingTarget(e.target)) return
 
       const mod = e.metaKey || e.ctrlKey
@@ -66,13 +70,13 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedSnapId, deleteSnap, copySelectedSnap, pasteSnap])
+  }, [selectedSnapId, deleteSnap, copySelectedSnap, pasteSnap, showSettings])
 
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div>
-          <h1>Part Connectivity Editor</h1>
+        <div className="header-brand">
+          <BrandWordmark suffix="LDraw Shadow Editor" />
           <p>Visualize and edit LDCad snap areas on LDraw part geometry.</p>
         </div>
         <div className="header-controls">
@@ -134,6 +138,9 @@ export function App() {
               Rotate <kbd>R</kbd>
             </button>
           </div>
+          <button type="button" className="btn btn-ghost" onClick={() => setShowSettings(true)}>
+            Settings
+          </button>
         </div>
       </header>
 
@@ -153,6 +160,18 @@ export function App() {
           <SavePanel />
         </aside>
       </div>
+
+      {showSettings && (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowSettings(false)
+          }}
+        >
+          <ThemeSettingsModal onClose={() => setShowSettings(false)} />
+        </div>
+      )}
     </div>
   )
 }
