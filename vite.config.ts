@@ -15,7 +15,7 @@ import {
 import { fileURLToPath } from 'node:url'
 import { isUnofficialLdrawPart, parseLdrawPartDescription } from './src/services/part-official'
 import { libraryRelCandidates } from './src/services/ldraw-library-paths'
-import { listDirectChildFiles } from './src/services/part-children'
+import { listDirectPrimitiveFiles } from './src/services/part-children'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -170,15 +170,15 @@ function connectivityApiPlugin(ldrawParts: string, shadowLibrary: string): Plugi
             return
           }
           const geometry = resolveLibraryFile(ldrawParts, partFile)
-          const children = geometry
-            ? listDirectChildFiles(readFileSync(geometry.abs, 'utf8')).map((child) => ({
-                ...child,
-                hasShadow: shadowExists(child.loadFile),
-                geometryExists: resolveLibraryFile(ldrawParts, child.loadFile) != null,
+          const primitives = geometry
+            ? listDirectPrimitiveFiles(readFileSync(geometry.abs, 'utf8')).map((primitive) => ({
+                ...primitive,
+                hasShadow: shadowExists(primitive.loadFile),
+                geometryExists: resolveLibraryFile(ldrawParts, primitive.loadFile) != null,
               }))
             : []
           res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ partFile, children }))
+          res.end(JSON.stringify({ partFile, children: primitives }))
           return
         }
 
@@ -238,11 +238,26 @@ function connectivityApiPlugin(ldrawParts: string, shadowLibrary: string): Plugi
   }
 }
 
+function localEbToolkitAliases(): Record<string, string> {
+  const toolkitRoot = path.resolve(__dirname, '../eb-ldraw-toolkit')
+  const aliases = {
+    '@eb/ldraw-models': path.join(toolkitRoot, 'packages/ldraw-models/src/index.ts'),
+    '@eb/ldraw-parser': path.join(toolkitRoot, 'packages/ldraw-parser/src/index.ts'),
+    '@eb/ldraw-three-core': path.join(toolkitRoot, 'packages/ldraw-three-core/src/index.ts'),
+  }
+  return Object.values(aliases).every((file) => existsSync(file)) ? aliases : {}
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '')
   const IB_PUBLIC = resolveConfiguredPath(env.LDRAW_PARTS_ROOT, '../instruction-builder/public')
   const LDRAW_PARTS = path.join(IB_PUBLIC, env.LDRAW_PARTS_SUBDIR?.trim() || 'ldraw-parts')
   const SHADOW_LIBRARY = resolveConfiguredPath(env.LDCAD_SHADOW_LIBRARY, '../LDCadShadowLibrary')
+  const ebAliases = localEbToolkitAliases()
+  const allowedFs = [__dirname, IB_PUBLIC, SHADOW_LIBRARY]
+  if (Object.keys(ebAliases).length > 0) {
+    allowedFs.push(path.resolve(__dirname, '../eb-ldraw-toolkit'))
+  }
 
   return {
     plugins: [
@@ -255,20 +270,13 @@ export default defineConfig(({ mode }) => {
       dedupe: ['three', '@types/three'],
       alias: {
         '@': path.resolve(__dirname, 'src'),
-        '@eb/ldraw-models': path.resolve(__dirname, '../eb-ldraw-toolkit/packages/ldraw-models/src/index.ts'),
-        '@eb/ldraw-parser': path.resolve(__dirname, '../eb-ldraw-toolkit/packages/ldraw-parser/src/index.ts'),
-        '@eb/ldraw-three-core': path.resolve(__dirname, '../eb-ldraw-toolkit/packages/ldraw-three-core/src/index.ts'),
+        ...ebAliases,
         three: path.resolve(__dirname, 'node_modules/three'),
       },
     },
     server: {
       fs: {
-        allow: [
-          __dirname,
-          path.resolve(__dirname, '../eb-ldraw-toolkit'),
-          IB_PUBLIC,
-          SHADOW_LIBRARY,
-        ],
+        allow: allowedFs,
       },
     },
     test: {

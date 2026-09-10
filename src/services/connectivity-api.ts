@@ -17,7 +17,7 @@ import {
   geometryUrlCandidates,
   shadowUrlCandidates,
 } from './ldraw-library-paths'
-import type { PartChildRef } from './part-children'
+import type { PartPrimitiveRef } from './part-children'
 
 function normalizeInput(raw: string): string {
   let s = raw.trim().toLowerCase()
@@ -65,11 +65,11 @@ export async function fetchPartStatus(partFile: string): Promise<{
   }
 }
 
-export async function fetchPartChildren(partFile: string): Promise<PartChildRef[]> {
+export async function fetchPartPrimitives(partFile: string): Promise<PartPrimitiveRef[]> {
   const normalized = normalizeInput(partFile)
   const res = await fetch(`/api/connectivity/children?part=${encodeURIComponent(normalized)}`)
-  if (!res.ok) throw new Error(`Children failed: ${res.status}`)
-  const data = (await res.json()) as { children?: PartChildRef[] }
+  if (!res.ok) throw new Error(`Primitives failed: ${res.status}`)
+  const data = (await res.json()) as { children?: PartPrimitiveRef[] }
   return data.children ?? []
 }
 
@@ -100,10 +100,10 @@ export async function loadPartConnectivity(partFile: string) {
   if (!status.geometryExists) {
     throw new Error(`Part geometry not found: ${normalized}`)
   }
-  const [resolved, geometryFeatures, children] = await Promise.all([
+  const [resolved, geometryFeatures, primitives] = await Promise.all([
     resolvePartConnectivityForEditor(normalized, fileLoader),
     resolvePartGeometryFeatures(normalized, fileLoader),
-    fetchPartChildren(normalized),
+    fetchPartPrimitives(normalized),
   ])
   const hadShadowFile = resolved.hadShadowFile || status.hasShadow
   const shadowSourceText = hadShadowFile ? await fetchShadowSourceText(normalized) : null
@@ -123,7 +123,7 @@ export async function loadPartConnectivity(partFile: string) {
     ownIncludes,
     isUnofficial: !!status.isUnofficial,
     geometryUrl: status.geometryUrl ?? geometryUrlCandidates(normalized)[0] ?? fallbackGeometryUrl(normalized),
-    children,
+    primitives,
   }
 }
 
@@ -258,4 +258,4 @@ export function partGeometryUrl(partFile: string, knownUrl?: string | null): str
   return knownUrl || fallbackGeometryUrl(partFile)
 }
 
-export type { SerializeFlattenedOptions, SnapWithOrigin, PartChildRef }
+export type { SerializeFlattenedOptions, SnapWithOrigin, PartPrimitiveRef }

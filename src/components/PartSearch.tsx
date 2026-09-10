@@ -14,7 +14,7 @@ export function PartSearch() {
   const status = useEditorStore((s) => s.status)
   const isUnofficial = useEditorStore((s) => s.isUnofficial)
   const dirty = useEditorStore((s) => s.dirty)
-  const partChildren = useEditorStore((s) => s.partChildren)
+  const partPrimitives = useEditorStore((s) => s.partPrimitives)
   const partNavStack = useEditorStore((s) => s.partNavStack)
 
   const doSearch = useCallback(async () => {
@@ -93,30 +93,30 @@ export function PartSearch() {
       )}
       {partFile && (
         <div className="child-tree">
-          <div className="child-tree-label">Children</div>
+          <div className="child-tree-label">Primitives</div>
           <div className="child-tree-root">
             <code>{partFile}</code>
           </div>
-          {partChildren.length === 0 ? (
+          {partPrimitives.length === 0 ? (
             <p className="child-tree-empty">No child primitives</p>
           ) : (
             <ul className="child-tree-items">
-              {partChildren.map((child) => (
-                <li key={child.loadFile}>
-                  {child.geometryExists ? (
+              {partPrimitives.map((primitive) => (
+                <li key={primitive.loadFile}>
+                  {primitive.geometryExists ? (
                     <button
                       type="button"
                       className="linkish"
                       disabled={loading}
-                      onClick={() => void doLoad(child.loadFile, 'child')}
+                      onClick={() => void doLoad(primitive.loadFile, 'primitive')}
                     >
-                      {child.displayName}
+                      {primitive.displayName}
                     </button>
                   ) : (
-                    <code className="child-tree-missing">{child.displayName}</code>
+                    <code className="child-tree-missing">{primitive.displayName}</code>
                   )}
-                  {child.count > 1 && <span className="child-tree-count">×{child.count}</span>}
-                  {!child.hasShadow && (
+                  {primitive.count > 1 && <span className="child-tree-count">×{primitive.count}</span>}
+                  {!primitive.hasShadow && (
                     <span className="badge badge-missing">no shadow</span>
                   )}
                 </li>

@@ -3,7 +3,7 @@ import { normalizePartFile } from '@eb/ldraw-parser'
 const TYPE1_RE =
   /^1\s+(\d+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+(.+?)\s*$/i
 
-export type DirectChildFile = {
+export type DirectPrimitiveFile = {
   /** Original type-1 filename as written in the DAT (e.g. `s\3003s01.dat`). */
   displayName: string
   /** Normalized load key (`s/3003s01.dat`). */
@@ -11,9 +11,9 @@ export type DirectChildFile = {
   count: number
 }
 
-/** Unique direct type-1 children of a DAT, in first-seen order. No grandchildren. */
-export function listDirectChildFiles(content: string): DirectChildFile[] {
-  const byKey = new Map<string, DirectChildFile>()
+/** Unique direct type-1 DAT refs of a part, in first-seen order. No nested refs. */
+export function listDirectPrimitiveFiles(content: string): DirectPrimitiveFile[] {
+  const byKey = new Map<string, DirectPrimitiveFile>()
   const order: string[] = []
   for (const raw of content.split('\n')) {
     const line = raw.trim()
@@ -34,7 +34,7 @@ export function listDirectChildFiles(content: string): DirectChildFile[] {
   return order.map((key) => byKey.get(key)!).filter(Boolean)
 }
 
-export type PartChildRef = DirectChildFile & {
+export type PartPrimitiveRef = DirectPrimitiveFile & {
   hasShadow: boolean
   geometryExists: boolean
 }

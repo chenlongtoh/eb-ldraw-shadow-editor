@@ -8,7 +8,7 @@ import type {
 import type { GeometryFeature, ShadowFileHeader } from '@eb/ldraw-parser'
 import { create } from 'zustand'
 import { isOwnSnap } from '../services/snap-ownership'
-import type { PartChildRef } from '../services/part-children'
+import type { PartPrimitiveRef } from '../services/part-children'
 
 export type EditableSnap = LDrawSourcedSnapRecord & {
   /** Stable id for selection / undo (not persisted). */
@@ -21,7 +21,7 @@ export type EditableSnap = LDrawSourcedSnapRecord & {
 
 export type ConnectivityStatus = 'missing' | 'partial' | 'ok' | 'unknown'
 
-export type PartNavMode = 'root' | 'child' | 'back' | 'keep'
+export type PartNavMode = 'root' | 'primitive' | 'back' | 'keep'
 
 const DEFAULT_EDITOR_NAME = 'John Doe'
 const EDITOR_NAME_STORAGE_KEY = 'pce.editorName'
@@ -98,11 +98,11 @@ export interface EditorSnapState {
   /** Undo stack (snapshots of snaps arrays). */
   past: EditableSnap[][]
   future: EditableSnap[][]
-  /** Direct type-1 children of the loaded part (one level). */
-  partChildren: PartChildRef[]
+  /** Direct type-1 DAT refs of the loaded part (one level). */
+  partPrimitives: PartPrimitiveRef[]
   /** Resolved LDraw geometry URL for the current part. */
   geometryUrl: string | null
-  /** Previously loaded parts when drilling into a child primitive. */
+  /** Previously loaded parts when drilling into a listed primitive. */
   partNavStack: string[]
 }
 
@@ -124,7 +124,7 @@ export interface EditorSnapActions {
     shadowSourceText?: string | null
     ownIncludes?: LDrawPartConnectivityInclude[]
     isUnofficial?: boolean
-    children?: PartChildRef[]
+    primitives?: PartPrimitiveRef[]
     geometryUrl?: string | null
   }, nav?: PartNavMode) => void
   setPartName: (name: string) => void
@@ -251,7 +251,7 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
   clipboardSnap: null,
   past: [],
   future: [],
-  partChildren: [],
+  partPrimitives: [],
   geometryUrl: null,
   partNavStack: [],
 
@@ -268,7 +268,7 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
     shadowSourceText = null,
     ownIncludes = [],
     isUnofficial = false,
-    children = [],
+    primitives = [],
     geometryUrl = null,
   }, nav = 'keep') => {
     const editable: EditableSnap[] = snaps.map((s) => ({
@@ -290,7 +290,7 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
       let partNavStack = state.partNavStack
       if (nav === 'root') {
         partNavStack = []
-      } else if (nav === 'child' && state.partFile) {
+      } else if (nav === 'primitive' && state.partFile) {
         partNavStack = [...state.partNavStack, state.partFile]
       } else if (nav === 'back') {
         partNavStack = state.partNavStack.slice(0, -1)
@@ -316,7 +316,7 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
         snapTargetFeatureId: null,
         pendingPlacement: null,
         pendingPose: null,
-        partChildren: children,
+        partPrimitives: primitives,
         geometryUrl,
         partNavStack,
       }
