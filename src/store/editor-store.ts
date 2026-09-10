@@ -103,6 +103,8 @@ export interface EditorSnapState {
   partPrimitives: PartPrimitiveRef[]
   /** Resolved LDraw geometry URL for the current part. */
   geometryUrl: string | null
+  /** True when geometry came from an uploaded .dat rather than the library. */
+  isCustomGeometry: boolean
   /** Previously loaded parts when drilling into a listed primitive. */
   partNavStack: string[]
 }
@@ -127,6 +129,7 @@ export interface EditorSnapActions {
     isUnofficial?: boolean
     primitives?: PartPrimitiveRef[]
     geometryUrl?: string | null
+    isCustomGeometry?: boolean
   }, nav?: PartNavMode) => void
   setPartName: (name: string) => void
   setEditorName: (name: string) => void
@@ -254,6 +257,7 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
   future: [],
   partPrimitives: [],
   geometryUrl: null,
+  isCustomGeometry: false,
   partNavStack: [],
 
   setLoading: (loading) => set({ loading }),
@@ -271,6 +275,7 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
     isUnofficial = false,
     primitives = [],
     geometryUrl = null,
+    isCustomGeometry = false,
   }, nav = 'keep') => {
     const editable: EditableSnap[] = snaps.map((s) => ({
       ...s,
@@ -319,6 +324,7 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
         pendingPose: null,
         partPrimitives: primitives,
         geometryUrl,
+        isCustomGeometry,
         partNavStack,
       }
     })

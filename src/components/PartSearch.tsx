@@ -1,11 +1,12 @@
-import { useCallback, useState } from 'react'
-import { loadPartConnectivity, searchParts } from '../services/connectivity-api'
+import { useCallback, useRef, useState } from 'react'
+import { loadCustomPartFile, loadPartConnectivity, searchParts } from '../services/connectivity-api'
 import { useEditorStore, type PartNavMode } from '../store/editor-store'
 
 export function PartSearch() {
   const [query, setQuery] = useState('3003')
   const [results, setResults] = useState<Array<{ partFile: string; hasShadow: boolean }>>([])
   const [searching, setSearching] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const loadPart = useEditorStore((s) => s.loadPart)
   const setLoading = useEditorStore((s) => s.setLoading)
   const setError = useEditorStore((s) => s.setError)
@@ -13,6 +14,7 @@ export function PartSearch() {
   const partFile = useEditorStore((s) => s.partFile)
   const status = useEditorStore((s) => s.status)
   const isUnofficial = useEditorStore((s) => s.isUnofficial)
+  const isCustomGeometry = useEditorStore((s) => s.isCustomGeometry)
   const dirty = useEditorStore((s) => s.dirty)
   const partPrimitives = useEditorStore((s) => s.partPrimitives)
   const partNavStack = useEditorStore((s) => s.partNavStack)
@@ -48,6 +50,27 @@ export function PartSearch() {
     [query, dirty, setLoading, setError, loadPart],
   )
 
+  const doUpload = useCallback(
+    async (file: File | undefined) => {
+      if (!file) return
+      if (dirty && !window.confirm('Discard unsaved snap edits?')) return
+      setLoading(true)
+      setError(null)
+      try {
+        const data = await loadCustomPartFile(file)
+        loadPart(data, 'root')
+        setQuery(data.partFile)
+        setResults([])
+      } catch (err) {
+        setError(String(err))
+        setLoading(false)
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      }
+    },
+    [dirty, setLoading, setError, loadPart],
+  )
+
   const goBack = useCallback(() => {
     const prev = partNavStack[partNavStack.length - 1]
     if (prev) void doLoad(prev, 'back')
@@ -73,6 +96,24 @@ export function PartSearch() {
           Search
         </button>
       </div>
+      <div className="row part-upload-row">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".dat,.ldr,text/plain"
+          className="visually-hidden"
+          onChange={(e) => void doUpload(e.target.files?.[0])}
+        />
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={loading}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          Upload .dat
+        </button>
+        <span className="muted part-upload-hint">Optional custom geometry</span>
+      </div>
       {partFile && (
         <div className="part-status">
           {partNavStack.length > 0 && (
@@ -88,6 +129,7 @@ export function PartSearch() {
           <code>{partFile}</code>
           <span className={`badge badge-${status}`}>{status}</span>
           {isUnofficial && <span className="badge badge-unofficial">unofficial</span>}
+          {isCustomGeometry && <span className="badge badge-custom">custom</span>}
           {dirty && <span className="badge badge-dirty">unsaved</span>}
         </div>
       )}

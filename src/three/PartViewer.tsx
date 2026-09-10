@@ -4,7 +4,6 @@ import { OrbitControls, Html } from '@react-three/drei'
 import { LDrawConditionalLineMaterial } from 'three/examples/jsm/materials/LDrawConditionalLineMaterial.js'
 import {
   LDrawLoaderWithColors,
-  PartRegistry,
   buildPlacementMatrix,
   buildStyledPartPrototype,
   createPlacedPartInstance,
@@ -12,6 +11,7 @@ import {
   removeNullChildren,
   type PartStyleOptions,
 } from '@eb/ldraw-three-core'
+import { getCustomPartRegistry } from '../services/custom-part-geometry'
 import type { PartPlacement } from '@eb/ldraw-models'
 import * as THREE from 'three'
 import { useEditorStore, snapGender, canEditSnap } from '../store/editor-store'
@@ -31,11 +31,9 @@ import {
   type OrthoFitResult,
 } from './ortho-camera-fit'
 
-const emptyRegistry = new PartRegistry()
-
 class EditorLDrawLoader extends LDrawLoaderWithColors {
   constructor() {
-    super(emptyRegistry)
+    super(getCustomPartRegistry())
   }
 }
 

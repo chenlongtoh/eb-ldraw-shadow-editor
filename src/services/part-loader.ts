@@ -4,6 +4,7 @@
  */
 export {
   loadPartConnectivity,
+  loadCustomPartFile,
   partGeometryUrl,
   fetchPartStatus,
   searchParts,
