@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   buildSaveContent,
   loadPartConnectivity,
+  prefersDownloadSave,
   saveConnectivityFile,
 } from '../services/connectivity-api'
 import { diffLines } from '../services/line-diff'
@@ -26,6 +27,7 @@ export function SavePanel() {
   const ownIncludes = useEditorStore((s) => s.ownIncludes)
   const loadPart = useEditorStore((s) => s.loadPart)
   const markClean = useEditorStore((s) => s.markClean)
+  const markSaved = useEditorStore((s) => s.markSaved)
   const setError = useEditorStore((s) => s.setError)
   const undo = useEditorStore((s) => s.undo)
   const redo = useEditorStore((s) => s.redo)
@@ -35,6 +37,7 @@ export function SavePanel() {
   const isNewShadow = !hadShadowFile
   const flattened = definitionMode === 'flatten'
   const prefilledIncludes = !hadShadowFile && ownIncludes.length > 0
+  const downloadOnly = prefersDownloadSave()
 
   const [editorDraft, setEditorDraft] = useState(editorName)
   const [nameDraft, setNameDraft] = useState('')
@@ -67,11 +70,7 @@ export function SavePanel() {
   const resolvedName = isNewShadow
     ? nameDraft.trim()
     : (shadowHeader?.partName?.trim() || partName?.trim() || partFile || '')
-  const resolvedHistory = isNewShadow
-    ? isUnofficial
-      ? `Initial info for ${partFile ?? ''} {unofficial}`
-      : `Initial info for ${partFile ?? ''}`
-    : historyDraft.trim()
+  const resolvedHistory = historyDraft.trim()
 
   const canConfirm =
     Boolean(partFile) &&
@@ -125,6 +124,15 @@ export function SavePanel() {
       if (isNewShadow) setPartName(resolvedName)
 
       const saveResult = await saveConnectivityFile(partFile, proposed)
+      if (saveResult.downloaded) {
+        markSaved(proposed)
+        setMessage(
+          `Downloaded ${saveResult.filename ?? partFile} (${snaps.length} snaps). ` +
+            'This host cannot write to a local shadow library — copy the file into parts/.',
+        )
+        return
+      }
+
       const verified = await loadPartConnectivity(partFile)
       loadPart({
         ...verified,
@@ -168,7 +176,7 @@ export function SavePanel() {
           disabled={!dirty || !canConfirm || saving}
           onClick={() => void confirmWrite()}
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? (downloadOnly ? 'Downloading…' : 'Saving…') : downloadOnly ? 'Download' : 'Save'}
         </button>
       </div>
 
@@ -213,13 +221,19 @@ export function SavePanel() {
       </div>
 
       <header className="save-panel-header">
-        <h3>Save shadow file</h3>
+        <h3>{downloadOnly ? 'Download shadow file' : 'Save shadow file'}</h3>
         <p className="muted">
           <code>{partFile}</code>
           {isNewShadow ? ' · New shadow' : ' · Update'}
           {isUnofficial ? ' · Unofficial' : ''}
           {definitionMode === 'flatten' ? ' · Reset / flatten' : ' · Keep inheritance'}
         </p>
+        {downloadOnly && (
+          <p className="muted">
+            This deployed app cannot write to a local shadow library. Confirm to download the{' '}
+            <code>.dat</code> file.
+          </p>
+        )}
       </header>
 
       <div className="save-panel-body">
@@ -295,16 +309,12 @@ export function SavePanel() {
             <span>History message</span>
             <input
               type="text"
-              value={isNewShadow ? resolvedHistory : historyDraft}
-              onChange={(e) => {
-                if (!isNewShadow) setHistoryDraft(e.target.value)
-              }}
-              readOnly={isNewShadow}
-              disabled={isNewShadow}
+              value={historyDraft}
+              onChange={(e) => setHistoryDraft(e.target.value)}
             />
             <span className="field-hint">
               {isNewShadow
-                ? 'Default for new shadows.'
+                ? 'Used as the first !HISTORY line.'
                 : 'Appended as a new !HISTORY line; existing history is preserved.'}
             </span>
           </label>
@@ -322,7 +332,7 @@ export function SavePanel() {
           disabled={!dirty || !canConfirm || saving}
           onClick={() => void confirmWrite()}
         >
-          {saving ? 'Saving…' : 'Confirm write'}
+          {saving ? (downloadOnly ? 'Downloading…' : 'Saving…') : downloadOnly ? 'Download file' : 'Confirm write'}
         </button>
       </div>
     </section>

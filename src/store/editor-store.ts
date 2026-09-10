@@ -161,6 +161,8 @@ export interface EditorSnapActions {
   pasteSnap: () => string | null
   setVisibility: (opts: Partial<Pick<EditorSnapState, 'showMale' | 'showFemale' | 'showSourceLabels'>>) => void
   markClean: () => void
+  /** Treat a downloaded/saved shadow payload as the new baseline (no library reload). */
+  markSaved: (shadowSourceText: string) => void
   undo: () => void
   redo: () => void
 }
@@ -462,6 +464,15 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
   setVisibility: (opts) => set(opts),
 
   markClean: () => set({ dirty: false, past: [], future: [] }),
+
+  markSaved: (shadowSourceText) =>
+    set({
+      dirty: false,
+      past: [],
+      future: [],
+      shadowSourceText,
+      hadShadowFile: true,
+    }),
 
   undo: () => {
     const state = get()

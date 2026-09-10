@@ -9,6 +9,7 @@ import {
   type SerializeFlattenedOptions,
 } from '@eb/ldraw-parser'
 import type { LDrawPartConnectivityInclude } from '@eb/ldraw-models'
+import { downloadTextFile } from './download-file'
 import { attachOriginLines, buildPreservedShadowContent, type SnapWithOrigin } from './shadow-save'
 import { collectNewShadowIncludes } from './shadow-includes'
 import {
@@ -175,23 +176,82 @@ export function buildSaveContent(options: {
   })
 }
 
-export async function saveConnectivityFile(partFile: string, content: string): Promise<{
+export type SaveConnectivityResult = {
   wroteToShadowLibrary: boolean
+  downloaded: boolean
+  filename?: string
   shadowPath?: string
   warning?: string
-}> {
+}
+
+/** Deployed/static builds have no local shadow-library write API. */
+export function prefersDownloadSave(): boolean {
+  return !!import.meta.env.PROD
+}
+
+/** True when a PUT response means the write API is missing (static / deployed host). */
+export function isMissingWriteApi(res: {
+  status: number
+  headers?: { get(name: string): string | null }
+}): boolean {
+  if (res.status === 404 || res.status === 405 || res.status === 501) return true
+  const contentType = res.headers?.get('content-type') ?? ''
+  return res.status >= 400 && contentType.includes('text/html')
+}
+
+export function shadowDownloadFilename(partFile: string): string {
+  const n = normalizeInput(partFile)
+  return n.split(/[/\\]/).pop() ?? n
+}
+
+function downloadShadowFile(partFile: string, content: string): SaveConnectivityResult {
+  const filename = shadowDownloadFilename(partFile)
+  downloadTextFile(filename, content)
+  return {
+    wroteToShadowLibrary: false,
+    downloaded: true,
+    filename,
+  }
+}
+
+export async function saveConnectivityFile(
+  partFile: string,
+  content: string,
+): Promise<SaveConnectivityResult> {
   const normalized = normalizeInput(partFile)
+  if (prefersDownloadSave()) {
+    return downloadShadowFile(normalized, content)
+  }
+
   const rel = `parts/${normalized}`
-  const res = await fetch(`/api/connectivity/${rel}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-    body: content,
-  })
-  if (!res.ok) {
+  try {
+    const res = await fetch(`/api/connectivity/${rel}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body: content,
+    })
+    if (res.ok) {
+      const data = (await res.json()) as {
+        wroteToShadowLibrary?: boolean
+        shadowPath?: string
+        warning?: string
+      }
+      return {
+        wroteToShadowLibrary: data.wroteToShadowLibrary ?? true,
+        downloaded: false,
+        shadowPath: data.shadowPath,
+        warning: data.warning,
+      }
+    }
+    if (isMissingWriteApi(res)) {
+      return downloadShadowFile(normalized, content)
+    }
     const text = await res.text()
     throw new Error(`Save failed: ${res.status} ${text}`)
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Save failed:')) throw err
+    return downloadShadowFile(normalized, content)
   }
-  return res.json()
 }
 
 export function partGeometryUrl(partFile: string, knownUrl?: string | null): string {
