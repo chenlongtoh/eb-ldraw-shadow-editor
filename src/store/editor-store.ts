@@ -80,8 +80,8 @@ export interface EditorSnapState {
   /** Magnetic snap while moving (translate mode). */
   snapToGeometry: boolean
   /**
-   * When true, translate positions snap to 1 LDU increments.
-   * Unlock (false) for free / sub-LDU movement.
+   * When true, translate positions snap to 1 LDU (Stepped Movement).
+   * When false, translate by 0.1 LDU.
    */
   gridLock: boolean
   /** Active snap target during drag (for highlight / HUD). */

@@ -4,7 +4,7 @@ const EASTERNBRICK_HOME = 'https://www.easternbrick.com'
 
 export function BrandWordmark({ suffix }: { suffix: string }) {
   const { resolved } = useUiTheme()
-  const logoSrc = resolved === 'dark' ? '/eb-logo-inverse.png' : '/eb-logo-light.png'
+  const logoSrc = resolved === 'dark' ? '/eb-logo-light.png' : '/eb-logo-inverse.png'
 
   return (
     <div className="brand-wordmark">

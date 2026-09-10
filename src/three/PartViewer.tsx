@@ -282,7 +282,7 @@ export function PartViewer({ gizmoMode }: { gizmoMode: 'translate' | 'rotate' })
       <SnapTargetHud gizmoMode={gizmoMode} />
       {pendingPlacement && (
         <div className="place-snap-hud" aria-live="polite">
-          Left-click to place · Middle-drag pan · Right-drag rotate · Esc to cancel
+          Left-click to place · WASD move · arrows rotate · Middle-drag pan · Right-drag rotate · Esc to cancel
         </div>
       )}
     </div>

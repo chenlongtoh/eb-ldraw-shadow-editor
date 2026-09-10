@@ -5,10 +5,12 @@ import type { EditableSnap } from '../store/editor-store'
 import { useEditorStore } from '../store/editor-store'
 import { SnapOverlay } from './SnapOverlay'
 import { LDRAW_DISPLAY_FLIP_INV } from './snap-geometry'
+import { cameraSync } from './camera-sync'
+import { applyKeyboardNudge, isTypingTarget } from './snap-nudge'
 import {
   applySnapAnchor,
   findSnapTarget,
-  GRID_STEP_LDU,
+  positionStepLdu,
   quantizePosition,
 } from './snap-snap'
 import type { Ori9, Vec3 } from './snap-rotation'
@@ -16,7 +18,7 @@ import type { Ori9, Vec3 } from './snap-rotation'
 /**
  * Click-to-place tool: ghost snap follows the pointer on a plane through the
  * orbit target; left-click commits, Escape cancels. Magnetic geometry snap and
- * 1 LDU grid lock apply the same as gizmo translate.
+ * stepped 1 / 0.1 LDU translation apply the same as gizmo translate.
  */
 export function PlaceSnapTool() {
   const pendingPlacement = useEditorStore((s) => s.pendingPlacement)
@@ -35,6 +37,10 @@ export function PlaceSnapTool() {
   const ndc = useMemo(() => new THREE.Vector2(), [])
   const hit = useMemo(() => new THREE.Vector3(), [])
   const ctrlHeldRef = useRef(false)
+  const keyboardPinnedRef = useRef(false)
+  const pinPointerRef = useRef<{ x: number; y: number } | null>(null)
+  const pendingPoseRef = useRef(pendingPose)
+  pendingPoseRef.current = pendingPose
 
   useEffect(() => {
     const syncCtrl = (e: KeyboardEvent) => {
@@ -54,16 +60,50 @@ export function PlaceSnapTool() {
   }, [])
 
   useEffect(() => {
-    if (!pendingPlacement) return
+    if (!pendingPlacement) {
+      keyboardPinnedRef.current = false
+      pinPointerRef.current = null
+      return
+    }
+
+    const canvas = gl.domElement
+    const active = document.activeElement
+    if (active instanceof HTMLElement && active !== canvas) active.blur()
+    canvas.tabIndex = 0
+    canvas.focus({ preventScroll: true })
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
         cancelPlaceSnap()
+        return
       }
+      if (isTypingTarget(e.target)) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+
+      const state = useEditorStore.getState()
+      const pose = state.pendingPose
+      const template = state.pendingPlacement
+      if (!template || !pose) return
+
+      const next = applyKeyboardNudge(
+        e,
+        { ...template, position: pose.position, orientation: pose.orientation },
+        cameraSync.quaternion,
+        positionStepLdu(state.gridLock),
+      )
+      if (!next) return
+
+      e.preventDefault()
+      e.stopPropagation()
+      keyboardPinnedRef.current = true
+      pinPointerRef.current = null
+      state.updatePendingPose(next.position, next.orientation)
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [pendingPlacement, cancelPlaceSnap])
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [pendingPlacement, cancelPlaceSnap, gl])
 
   useEffect(() => {
     if (!pendingPlacement) {
@@ -90,8 +130,11 @@ export function PlaceSnapTool() {
 
       // Display → LDraw local (undo π X-flip used by the scene group).
       const ldraw = hit.clone().applyMatrix4(LDRAW_DISPLAY_FLIP_INV)
+      const live = pendingPoseRef.current
       let position: Vec3 = [ldraw.x, ldraw.y, ldraw.z]
-      let orientation = [...(pendingPlacement.orientation ?? [1, 0, 0, 0, 1, 0, 0, 0, 1])] as Ori9
+      let orientation = [
+        ...(live?.orientation ?? pendingPlacement.orientation ?? [1, 0, 0, 0, 1, 0, 0, 0, 1]),
+      ] as Ori9
       let magnetHit = false
 
       if (snapToGeometry && !ctrlHeldRef.current && geometryFeatures.length > 0) {
@@ -116,15 +159,25 @@ export function PlaceSnapTool() {
         setSnapTargetFeatureId(null)
       }
 
-      if (gridLock && !magnetHit) {
-        position = quantizePosition(position, GRID_STEP_LDU)
+      if (!magnetHit) {
+        position = quantizePosition(position, positionStepLdu(gridLock))
       }
 
       return { position, orientation }
     }
 
     const onPointerMove = (e: PointerEvent) => {
-      // Keep ghost tracking even while right-dragging to pan.
+      if (keyboardPinnedRef.current) {
+        if (!pinPointerRef.current) {
+          pinPointerRef.current = { x: e.clientX, y: e.clientY }
+          return
+        }
+        const dx = e.clientX - pinPointerRef.current.x
+        const dy = e.clientY - pinPointerRef.current.y
+        if (dx * dx + dy * dy < 16) return
+        keyboardPinnedRef.current = false
+        pinPointerRef.current = null
+      }
       const pose = resolvePose(e.clientX, e.clientY)
       if (pose) updatePendingPose(pose.position, pose.orientation)
     }
@@ -132,8 +185,10 @@ export function PlaceSnapTool() {
     const onPointerDown = (e: PointerEvent) => {
       // Only left-click commits; middle/right reach OrbitControls (pan / rotate).
       if (e.button !== 0) return
-      const pose = resolvePose(e.clientX, e.clientY)
-      if (pose) updatePendingPose(pose.position, pose.orientation)
+      if (!keyboardPinnedRef.current) {
+        const pose = resolvePose(e.clientX, e.clientY)
+        if (pose) updatePendingPose(pose.position, pose.orientation)
+      }
       e.preventDefault()
       e.stopPropagation()
       confirmPlaceSnap()

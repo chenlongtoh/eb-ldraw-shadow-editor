@@ -20,7 +20,7 @@ import {
   type Ori9,
   type Vec3,
 } from './snap-rotation'
-import { applySnapAnchor, findSnapTarget, GRID_STEP_LDU, quantizePosition } from './snap-snap'
+import { applySnapAnchor, findSnapTarget, positionStepLdu, quantizePosition } from './snap-snap'
 
 export interface RotateDragInfo {
   active: boolean
@@ -171,9 +171,10 @@ export function SnapGizmo({
       setSnapTargetFeatureId(null)
     }
 
-    // Grid lock: 1 LDU steps unless unlocked or already magnetically snapped.
-    if (mode === 'translate' && gridLock && !magnetHit) {
-      finalPos = quantizePosition(finalPos, GRID_STEP_LDU)
+    const posStep = positionStepLdu(gridLock)
+    // Stepped Movement: 1 LDU; off: 0.1 LDU — unless magnetically snapped.
+    if (mode === 'translate' && !magnetHit) {
+      finalPos = quantizePosition(finalPos, posStep)
     }
 
     if (mode === 'translate') {
@@ -209,7 +210,7 @@ export function SnapGizmo({
           mode={mode}
           space="world"
           size={0.85}
-          translationSnap={mode === 'translate' && gridLock ? GRID_STEP_LDU : null}
+          translationSnap={mode === 'translate' ? positionStepLdu(gridLock) : null}
           onMouseDown={() => {
             dragging.current = true
             historyPushed.current = false

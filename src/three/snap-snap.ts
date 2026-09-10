@@ -12,16 +12,23 @@ import {
 import type { Ori9, Vec3 } from './snap-rotation'
 
 export const DEFAULT_SNAP_RADIUS_LDU = 15
-/** Default translate increment when grid lock is enabled. */
+/** Translate increment when Stepped Movement is enabled. */
 export const GRID_STEP_LDU = 1
+/** Translate increment when Stepped Movement is off. */
+export const FINE_STEP_LDU = 0.1
+
+export function positionStepLdu(stepped: boolean): number {
+  return stepped ? GRID_STEP_LDU : FINE_STEP_LDU
+}
 
 export function quantizePosition(position: Vec3, step: number = GRID_STEP_LDU): Vec3 {
   if (step <= 0) return position
-  return [
-    Math.round(position[0] / step) * step,
-    Math.round(position[1] / step) * step,
-    Math.round(position[2] / step) * step,
-  ]
+  const snap = (n: number) => {
+    const v = Math.round(n / step) * step
+    const r = Math.round(v * 1000) / 1000
+    return Object.is(r, -0) ? 0 : r
+  }
+  return [snap(position[0]), snap(position[1]), snap(position[2])]
 }
 
 function dist3(a: Vec3, b: Vec3): number {

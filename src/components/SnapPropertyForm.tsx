@@ -7,6 +7,9 @@ import {
   setDisplayEulerDeg,
   type RotationAxis,
 } from '../three/snap-rotation'
+import { cameraSync } from '../three/camera-sync'
+import { applyKeyboardNudge, isTypingTarget } from '../three/snap-nudge'
+import { positionStepLdu } from '../three/snap-snap'
 
 function Num({
   label,
@@ -33,12 +36,6 @@ function Num({
       />
     </label>
   )
-}
-
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  const tag = target.tagName
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
 }
 
 export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rotate' }) {
@@ -68,39 +65,32 @@ export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rota
   }, [euler[0], euler[1], euler[2], selectedSnapId])
 
   useEffect(() => {
-    if (!snap || gizmoMode !== 'rotate') return
+    if (!snap || !editable) return
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target)) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
 
-      let axis: RotationAxis | null = null
-      let degrees = 0
+      const state = useEditorStore.getState()
+      const current = state.snaps.find((s) => s.id === state.selectedSnapId)
+      if (!current || !canEditSnap(current, state.partFile, state.definitionMode)) return
 
-      if (e.key === 'ArrowLeft') {
-        axis = e.shiftKey ? 'z' : 'y'
-        degrees = -90
-      } else if (e.key === 'ArrowRight') {
-        axis = e.shiftKey ? 'z' : 'y'
-        degrees = 90
-      } else if (e.key === 'ArrowUp') {
-        axis = 'x'
-        degrees = -90
-      } else if (e.key === 'ArrowDown') {
-        axis = 'x'
-        degrees = 90
-      } else {
-        return
-      }
+      const next = applyKeyboardNudge(
+        e,
+        current,
+        cameraSync.quaternion,
+        positionStepLdu(state.gridLock),
+      )
+      if (!next) return
 
       e.preventDefault()
-      const next = rotateSnapAboutDisplayAxis(snap, axis, degrees)
-      updateSnap(snap.id, next)
+      e.stopPropagation()
+      state.updateSnap(current.id, next)
     }
 
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [snap, gizmoMode, updateSnap])
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [snap, editable])
 
   if (!snap) {
     return (
@@ -112,10 +102,10 @@ export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rota
   }
 
   const patch = (p: Partial<LDrawSnapRecord>) => updateSnap(snap.id, p)
-  const posStep = gridLock ? 1 : 0.1
+  const posStep = positionStepLdu(gridLock)
   const patchPos = (axis: 0 | 1 | 2, value: number) => {
     const next = [...snap.position] as [number, number, number]
-    next[axis] = gridLock ? Math.round(value) : value
+    next[axis] = Math.round(value / posStep) * posStep
     patch({ position: next })
   }
 
@@ -196,7 +186,8 @@ export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rota
           {gizmoMode === 'rotate' && <span className="rotation-badge">Rotate mode</span>}
         </div>
         <p className="muted rotation-hint">
-          Arrow keys: ←/→ = ±90° Y, ↑/↓ = ±90° X, Shift+←/→ = ±90° Z
+          WASD moves along the nearest view axis ({posStep} LDU). Arrow keys always rotate:
+          ←/→ = ±90° Y, ↑/↓ = ±90° X, Shift+←/→ = ±90° Z
         </p>
 
         <div className="field-row">

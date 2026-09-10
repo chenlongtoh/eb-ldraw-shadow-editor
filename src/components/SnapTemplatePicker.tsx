@@ -12,7 +12,8 @@ export function SnapTemplatePicker() {
       <h2>Add snap</h2>
       {pendingPlacement && (
         <p className="muted place-hint">
-          Click to place · middle-drag pan · right-drag rotate · <kbd>Esc</kbd> cancel
+          Click to place · WASD move · arrows rotate · middle-drag pan · right-drag rotate ·{' '}
+          <kbd>Esc</kbd> cancel
           <button type="button" className="btn btn-ghost" onClick={() => cancelPlaceSnap()}>
             Cancel
           </button>
@@ -26,7 +27,10 @@ export function SnapTemplatePicker() {
             className={`template-card${pendingPlacement ? ' template-card-dim' : ''}`}
             disabled={!partFile}
             title={t.description}
-            onClick={() => beginPlaceSnap(instantiateTemplate(t))}
+            onClick={(e) => {
+              beginPlaceSnap(instantiateTemplate(t))
+              e.currentTarget.blur()
+            }}
           >
             <strong>{t.label}</strong>
             <span>{t.description}</span>

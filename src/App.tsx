@@ -8,12 +8,7 @@ import { SavePanel } from './components/SavePanel'
 import { ThemeSettingsModal } from './components/ThemeSettingsModal'
 import { PartViewer } from './three/PartViewer'
 import { useEditorStore } from './store/editor-store'
-
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  const tag = target.tagName
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
-}
+import { isTypingTarget } from './three/snap-nudge'
 
 export function App() {
   const [gizmoMode, setGizmoMode] = useState<'translate' | 'rotate'>('translate')
@@ -112,13 +107,13 @@ export function App() {
             />
             Snap
           </label>
-          <label className="toggle" title="Allow sub-LDU movement while dragging snaps">
+          <label className="toggle" title="Move by 1 LDU. Off = 0.1 LDU.">
             <input
               type="checkbox"
-              checked={!gridLock}
-              onChange={(e) => setGridLock(!e.target.checked)}
+              checked={gridLock}
+              onChange={(e) => setGridLock(e.target.checked)}
             />
-            Unlock
+            Stepped Movement
           </label>
           <div className="mode-toggle">
             <button
