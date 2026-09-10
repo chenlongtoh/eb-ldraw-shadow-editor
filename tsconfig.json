@@ -17,10 +17,7 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@eb/ldraw-models": ["../eb-ldraw-toolkit/packages/ldraw-models/src/index.ts"],
-      "@eb/ldraw-parser": ["../eb-ldraw-toolkit/packages/ldraw-parser/src/index.ts"],
-      "@eb/ldraw-three-core": ["../eb-ldraw-toolkit/packages/ldraw-three-core/src/index.ts"]
+      "@/*": ["src/*"]
     }
   },
   "include": ["src", "vite.config.ts"]

@@ -16,12 +16,12 @@
   },
   "dependencies": {
     "@eb/ldraw-models": "^0.1.5",
-    "@eb/ldraw-parser": "^0.3.2",
+    "@eb/ldraw-parser": "^0.3.4",
     "@eb/ldraw-three-core": "^0.3.5",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.0.0",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
+    "react": ">=19.1.0 <19.3.0",
+    "react-dom": ">=19.1.0 <19.3.0",
     "three": "^0.174.0",
     "zustand": "^5.0.14"
   },
