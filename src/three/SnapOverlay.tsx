@@ -9,18 +9,19 @@ import { cylinderLength, maxRadius, snapColor, snapLocalMatrix } from './snap-ge
  * direction arrow along −Y so they align with stud / anti-stud geometry
  * (LDraw −Y = up after the display π X-flip).
  */
-function AxisArrow({ length }: { length: number }) {
+function AxisArrow({ length, locked }: { length: number; locked: boolean }) {
   const shaftLen = Math.max(length * 0.55, 6)
+  const color = locked ? '#94a3b8' : '#f8fafc'
+  const opacity = locked ? 0.45 : 0.85
   return (
     <group>
       <mesh position={[0, -shaftLen / 2, 0]}>
         <cylinderGeometry args={[0.35, 0.35, shaftLen, 8]} />
-        <meshBasicMaterial color="#f8fafc" transparent opacity={0.85} depthTest={false} />
+        <meshBasicMaterial color={color} transparent opacity={opacity} depthTest={false} />
       </mesh>
-      {/* ConeGeometry points +Y by default; flip so the tip faces −Y */}
       <mesh position={[0, -(shaftLen + 1.4), 0]} rotation={[Math.PI, 0, 0]}>
         <coneGeometry args={[1.1, 2.8, 10]} />
-        <meshBasicMaterial color="#f8fafc" transparent opacity={0.9} depthTest={false} />
+        <meshBasicMaterial color={color} transparent opacity={opacity + 0.05} depthTest={false} />
       </mesh>
     </group>
   )
@@ -28,12 +29,37 @@ function AxisArrow({ length }: { length: number }) {
 
 /** Start Y for stacking sections toward −Y (LDCad Neg-Y pointing). */
 function stackStartY(total: number, center: boolean): number {
-  // center: span [+total/2 → −total/2]; non-center: span [0 → −total]
   return center ? total / 2 : 0
 }
 
-function CylSections({ snap, selected }: { snap: EditableSnap; selected: boolean }) {
-  const color = snapColor(snap, selected)
+function snapMatProps(snap: EditableSnap, selected: boolean, locked: boolean) {
+  const color = snapColor(snap, selected, { locked })
+  const opacity = locked
+    ? selected
+      ? 0.4
+      : 0.22
+    : selected
+      ? 0.55
+      : 0.35
+  return {
+    color,
+    transparent: true as const,
+    opacity,
+    depthTest: false as const,
+    wireframe: locked,
+  }
+}
+
+function CylSections({
+  snap,
+  selected,
+  locked,
+}: {
+  snap: EditableSnap
+  selected: boolean
+  locked: boolean
+}) {
+  const mat = snapMatProps(snap, selected, locked)
   const secs = snap.secs ?? [{ shape: 'R', values: [maxRadius(snap), cylinderLength(snap)] }]
   const total = secs.reduce((s, sec) => s + (sec.values[1] ?? 0), 0)
   let y = stackStartY(total, snap.center)
@@ -44,16 +70,15 @@ function CylSections({ snap, selected }: { snap: EditableSnap; selected: boolean
         const h = Math.max(sec.values[1] ?? 1, 0.5)
         const mid = y - h / 2
         y -= h
+        const isSquare = sec.shape === 'S'
         return (
           <mesh key={i} position={[0, mid, 0]}>
-            <cylinderGeometry args={[r, r, h, 20]} />
-            <meshBasicMaterial
-              color={color}
-              transparent
-              opacity={selected ? 0.55 : 0.35}
-              depthTest={false}
-              wireframe={sec.shape === 'A' || sec.shape === 'S'}
-            />
+            {isSquare ? (
+              <boxGeometry args={[r * 2, h, r * 2]} />
+            ) : (
+              <cylinderGeometry args={[r, r, h, 20]} />
+            )}
+            <meshBasicMaterial {...mat} wireframe={locked || sec.shape === 'A'} />
           </mesh>
         )
       })}
@@ -61,81 +86,94 @@ function CylSections({ snap, selected }: { snap: EditableSnap; selected: boolean
   )
 }
 
-function ClipVisual({ snap, selected }: { snap: EditableSnap; selected: boolean }) {
-  const color = snapColor(snap, selected)
+function ClipVisual({
+  snap,
+  selected,
+  locked,
+}: {
+  snap: EditableSnap
+  selected: boolean
+  locked: boolean
+}) {
+  const mat = snapMatProps(snap, selected, locked)
   const r = snap.radius ?? 4
   const len = snap.length ?? 8
-  // Non-centered: extend into −Y; centered: symmetric about origin
   const midY = snap.center ? 0 : -len / 2
   return (
     <mesh position={[0, midY, 0]}>
       <cylinderGeometry args={[r, r, len, 24, 1, true, 0, Math.PI * 1.4]} />
-      <meshBasicMaterial
-        color={color}
-        transparent
-        opacity={selected ? 0.6 : 0.4}
-        depthTest={false}
-        side={THREE.DoubleSide}
-      />
+      <meshBasicMaterial {...mat} opacity={locked ? mat.opacity : selected ? 0.6 : 0.4} side={THREE.DoubleSide} />
     </mesh>
   )
 }
 
-function FingerVisual({ snap, selected }: { snap: EditableSnap; selected: boolean }) {
-  const color = snapColor(snap, selected)
+function FingerVisual({
+  snap,
+  selected,
+  locked,
+}: {
+  snap: EditableSnap
+  selected: boolean
+  locked: boolean
+}) {
+  const mat = snapMatProps(snap, selected, locked)
+  const seq = snap.seq ?? [1, 1, 1]
   const r = snap.radius ?? 4
-  const seq = snap.seq ?? [8]
-  const total = seq.reduce((a, b) => a + b, 0)
-  let y = stackStartY(total, snap.center)
+  const pitch = 4
   return (
-    <>
-      {seq.map((h, i) => {
-        const mid = y - h / 2
-        y -= h
-        const solid = i % 2 === 0
+    <group>
+      {seq.map((solid, i) => {
+        const y = -i * pitch
         return (
-          <mesh key={i} position={[0, mid, 0]}>
-            <cylinderGeometry args={[r, r, Math.max(h, 0.5), 16]} />
+          <mesh key={i} position={[0, y, 0]}>
+            <cylinderGeometry args={[r, r, pitch * 0.85, 16]} />
             <meshBasicMaterial
-              color={color}
-              transparent
-              opacity={solid ? (selected ? 0.55 : 0.35) : 0.12}
-              depthTest={false}
+              {...mat}
+              opacity={solid ? mat.opacity : locked ? 0.1 : 0.12}
             />
           </mesh>
         )
       })}
-    </>
+    </group>
   )
 }
 
-function GenVisual({ snap, selected }: { snap: EditableSnap; selected: boolean }) {
-  const color = snapColor(snap, selected)
+function GenVisual({
+  snap,
+  selected,
+  locked,
+}: {
+  snap: EditableSnap
+  selected: boolean
+  locked: boolean
+}) {
+  const color = snapColor(snap, selected, { locked })
+  const opacity = locked ? (selected ? 0.55 : 0.35) : selected ? 0.9 : 0.7
   const b = snap.bounding
-  if (!b || b.kind === 'sphere' || snap.metaType === 'SNAP_SPH') {
-    const radius = b?.kind === 'sphere' ? (b.values[0] ?? 8) : (snap.radius ?? 8)
+  if (b?.kind === 'box' && b.values.length >= 3) {
+    const [x, y, z] = b.values
     return (
       <mesh>
-        <sphereGeometry args={[radius, 20, 16]} />
-        <meshBasicMaterial color={color} wireframe transparent opacity={selected ? 0.9 : 0.7} depthTest={false} />
+        <boxGeometry args={[Math.max(x, 1), Math.max(y, 1), Math.max(z, 1)]} />
+        <meshBasicMaterial color={color} wireframe transparent opacity={opacity} depthTest={false} />
       </mesh>
     )
   }
-  if (b.kind === 'cylinder') {
-    const r = b.values[0] ?? 8
-    const h = b.values[1] ?? 16
+  if (b?.kind === 'sphere' || snap.metaType === 'SNAP_SPH') {
+    const r = b?.values[0] ?? snap.radius ?? 4
     return (
       <mesh>
-        <cylinderGeometry args={[r, r, h, 20]} />
-        <meshBasicMaterial color={color} wireframe transparent opacity={0.7} depthTest={false} />
+        <sphereGeometry args={[Math.max(r, 1), 16, 12]} />
+        <meshBasicMaterial color={color} wireframe transparent opacity={opacity} depthTest={false} />
       </mesh>
     )
   }
-  const [sx = 8, sy = 8, sz = 8] = b.values
+  const r = maxRadius(snap)
+  const h = cylinderLength(snap)
   return (
     <mesh>
-      <boxGeometry args={[sx, sy, sz]} />
-      <meshBasicMaterial color={color} wireframe transparent opacity={0.7} depthTest={false} />
+      <cylinderGeometry args={[r, r, Math.max(h, 2), 16]} />
+      <meshBasicMaterial color={color} wireframe transparent opacity={opacity} depthTest={false} />
     </mesh>
   )
 }
@@ -143,11 +181,14 @@ function GenVisual({ snap, selected }: { snap: EditableSnap; selected: boolean }
 export function SnapOverlay({
   snap,
   selected,
+  locked = false,
   onSelect,
   showLabel,
 }: {
   snap: EditableSnap
   selected: boolean
+  /** Inherited / read-only — muted color + wireframe. */
+  locked?: boolean
   onSelect: (id: string) => void
   showLabel: boolean
 }) {
@@ -171,17 +212,24 @@ export function SnapOverlay({
         onSelect(snap.id)
       }}
     >
-      {snap.metaType === 'SNAP_CYL' && <CylSections snap={snap} selected={selected} />}
-      {snap.metaType === 'SNAP_CLP' && <ClipVisual snap={snap} selected={selected} />}
-      {snap.metaType === 'SNAP_FGR' && <FingerVisual snap={snap} selected={selected} />}
-      {(snap.metaType === 'SNAP_GEN' || snap.metaType === 'SNAP_SPH') && (
-        <GenVisual snap={snap} selected={selected} />
+      {snap.metaType === 'SNAP_CYL' && (
+        <CylSections snap={snap} selected={selected} locked={locked} />
       )}
-      <AxisArrow length={len} />
+      {snap.metaType === 'SNAP_CLP' && (
+        <ClipVisual snap={snap} selected={selected} locked={locked} />
+      )}
+      {snap.metaType === 'SNAP_FGR' && (
+        <FingerVisual snap={snap} selected={selected} locked={locked} />
+      )}
+      {(snap.metaType === 'SNAP_GEN' || snap.metaType === 'SNAP_SPH') && (
+        <GenVisual snap={snap} selected={selected} locked={locked} />
+      )}
+      <AxisArrow length={len} locked={locked} />
       {showLabel && (
         <Html center distanceFactor={180} style={{ pointerEvents: 'none' }}>
-          <div className="snap-label">
+          <div className={`snap-label${locked ? ' snap-label-locked' : ''}`}>
             {snap.metaType.replace('SNAP_', '')}
+            {locked ? ' · incl' : ''}
             <span>{snap.sourceFile}</span>
           </div>
         </Html>

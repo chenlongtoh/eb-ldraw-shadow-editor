@@ -19,7 +19,7 @@ describe('LDCad snap serializer round-trip', () => {
     expect(again.grid).toBe('C 2 C 2 20 20')
   })
 
-  it('writes SNAP_CLEAR flattened file', () => {
+  it('writes SNAP_CLEAR flattened file with Initial info history', () => {
     const snaps = parseConnectivityFile(
       '0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 6 4]',
       'x.dat',
@@ -28,10 +28,31 @@ describe('LDCad snap serializer round-trip', () => {
       partFile: '3003.dat',
       partName: 'Brick 2 x 2',
       snaps,
+      historyNote: 'Initial info for 3003.dat',
     })
     expect(text).toContain('0 !LDCAD SNAP_CLEAR')
     expect(text).toContain('0 LDCad shadow info for "Brick 2 x 2"')
+    expect(text).toMatch(
+      /0 !HISTORY \d{4}-\d{2}-\d{2} \{Part Connectivity Editor\} Initial info for 3003\.dat/,
+    )
     expect(parseConnectivityFile(text, '3003.dat').snaps).toHaveLength(1)
+  })
+
+  it('uses custom editorName in HISTORY braces', () => {
+    const snaps = parseConnectivityFile(
+      '0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 6 4]',
+      'x.dat',
+    ).snaps
+    const text = serializeFlattenedConnectivity({
+      partFile: '3003.dat',
+      partName: 'Brick 2 x 2',
+      snaps,
+      editorName: 'Ada Lovelace',
+      historyNote: 'Initial info for 3003.dat',
+    })
+    expect(text).toMatch(
+      /0 !HISTORY \d{4}-\d{2}-\d{2} \{Ada Lovelace\} Initial info for 3003\.dat/,
+    )
   })
 
   it('preserves existing history and appends a new entry', () => {
@@ -63,6 +84,7 @@ describe('LDCad snap serializer round-trip', () => {
       license: header.license ?? undefined,
       existingHistory: header.history,
       historyNote: 'Edited connectivity for 3003.dat',
+      editorName: 'Part Connectivity Editor',
     })
     expect(text).toContain('0 LDCad shadow info for "Brick  2 x  2"')
     expect(text).toContain('0 Author: LDCad Shadow Library')

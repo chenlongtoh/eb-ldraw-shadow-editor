@@ -5,6 +5,7 @@ import path from 'node:path'
 import {
   existsSync,
   createReadStream,
+  readFileSync,
   statSync,
   mkdirSync,
   writeFileSync,
@@ -12,6 +13,9 @@ import {
   readdirSync,
 } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { isUnofficialLdrawPart, parseLdrawPartDescription } from './src/services/part-official'
+import { libraryRelCandidates } from './src/services/ldraw-library-paths'
+import { listDirectChildFiles } from './src/services/part-children'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -76,9 +80,16 @@ function serveStaticDir(urlPrefix: string, rootDir: string): Plugin {
   }
 }
 
+function resolveLibraryFile(root: string, partFile: string): { rel: string; abs: string } | null {
+  for (const rel of libraryRelCandidates(partFile)) {
+    const abs = path.join(root, rel)
+    if (existsSync(abs) && statSync(abs).isFile()) return { rel, abs }
+  }
+  return null
+}
+
 function connectivityApiPlugin(ldrawParts: string, shadowLibrary: string): Plugin {
-  const shadowExists = (partFile: string) =>
-    existsSync(path.join(shadowLibrary, 'parts', partFile))
+  const shadowExists = (partFile: string) => resolveLibraryFile(shadowLibrary, partFile) != null
 
   return {
     name: 'connectivity-api',
@@ -124,15 +135,50 @@ function connectivityApiPlugin(ldrawParts: string, shadowLibrary: string): Plugi
             res.end('Bad Request')
             return
           }
-          const geometryExists = existsSync(path.join(ldrawParts, 'parts', partFile))
+          const geometry = resolveLibraryFile(ldrawParts, partFile)
+          let isUnofficial = false
+          let description: string | null = null
+          if (geometry) {
+            try {
+              const header = readFileSync(geometry.abs, 'utf8').slice(0, 8192)
+              isUnofficial = isUnofficialLdrawPart(header)
+              description = parseLdrawPartDescription(header)
+            } catch {
+              // ignore unreadable header
+            }
+          }
           res.setHeader('Content-Type', 'application/json')
           res.end(
             JSON.stringify({
               partFile,
-              geometryExists,
+              geometryExists: geometry != null,
+              geometryUrl: geometry ? `/ldraw-parts/${geometry.rel}` : null,
               hasShadow: shadowExists(partFile),
+              isUnofficial,
+              description,
             }),
           )
+          return
+        }
+
+        if (method === 'GET' && urlPath === 'children') {
+          const url = new URL(req.url ?? '', 'http://localhost')
+          const partFile = (url.searchParams.get('part') ?? '').toLowerCase()
+          if (!partFile.endsWith('.dat') || partFile.includes('..')) {
+            res.statusCode = 400
+            res.end('Bad Request')
+            return
+          }
+          const geometry = resolveLibraryFile(ldrawParts, partFile)
+          const children = geometry
+            ? listDirectChildFiles(readFileSync(geometry.abs, 'utf8')).map((child) => ({
+                ...child,
+                hasShadow: shadowExists(child.loadFile),
+                geometryExists: resolveLibraryFile(ldrawParts, child.loadFile) != null,
+              }))
+            : []
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ partFile, children }))
           return
         }
 

@@ -3,7 +3,7 @@ import { PartSearch } from './components/PartSearch'
 import { SnapList } from './components/SnapList'
 import { SnapTemplatePicker } from './components/SnapTemplatePicker'
 import { SnapPropertyForm } from './components/SnapPropertyForm'
-import { SaveBar } from './components/SaveBar'
+import { SavePanel } from './components/SavePanel'
 import { PartViewer } from './three/PartViewer'
 import { useEditorStore } from './store/editor-store'
 
@@ -142,7 +142,6 @@ export function App() {
       <div className="app-body">
         <aside className="sidebar">
           <PartSearch />
-          <SaveBar />
           <SnapTemplatePicker />
           <SnapList />
           <SnapPropertyForm gizmoMode={gizmoMode} />
@@ -150,6 +149,9 @@ export function App() {
         <main className="viewport">
           <PartViewer gizmoMode={gizmoMode} />
         </main>
+        <aside className="sidebar sidebar-right">
+          <SavePanel />
+        </aside>
       </div>
     </div>
   )

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LDrawSnapRecord } from '@eb/ldraw-models'
-import { useEditorStore } from '../store/editor-store'
+import { useEditorStore, canEditSnap } from '../store/editor-store'
 import {
   orientationToDisplayEulerDeg,
   rotateSnapAboutDisplayAxis,
@@ -13,11 +13,13 @@ function Num({
   value,
   onChange,
   step = 1,
+  disabled = false,
 }: {
   label: string
   value: number
   onChange: (n: number) => void
   step?: number
+  disabled?: boolean
 }) {
   return (
     <label className="field">
@@ -25,6 +27,7 @@ function Num({
       <input
         type="number"
         step={step}
+        disabled={disabled}
         value={Number.isFinite(value) ? value : 0}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
       />
@@ -39,11 +42,14 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rotate' }) {
+  const partFile = useEditorStore((s) => s.partFile)
   const snaps = useEditorStore((s) => s.snaps)
   const selectedSnapId = useEditorStore((s) => s.selectedSnapId)
   const updateSnap = useEditorStore((s) => s.updateSnap)
   const gridLock = useEditorStore((s) => s.gridLock)
+  const definitionMode = useEditorStore((s) => s.definitionMode)
   const snap = snaps.find((s) => s.id === selectedSnapId)
+  const editable = snap ? canEditSnap(snap, partFile, definitionMode) : false
 
   const euler = useMemo(
     () =>
@@ -130,8 +136,10 @@ export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rota
       <h2>Properties</h2>
       <p className="muted source-line">
         Source: <code>{snap.sourceFile}</code>
+        {!editable && ' · read-only'}
       </p>
 
+      <fieldset className="snap-props-fieldset" disabled={!editable}>
       <div className="field-row">
         <label className="field">
           <span>Type</span>
@@ -427,6 +435,7 @@ export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rota
           />
         </label>
       )}
+      </fieldset>
     </section>
   )
 }

@@ -169,19 +169,48 @@ export function matrixToPosOri(m: THREE.Matrix4): {
   }
 }
 
-export function snapColor(record: LDrawSnapRecord, selected: boolean): string {
-  if (selected) return '#ffffff'
+export function snapColor(
+  record: LDrawSnapRecord,
+  selected: boolean,
+  options?: { locked?: boolean },
+): string {
+  const locked = options?.locked ?? false
+  if (locked && selected) return '#94a3b8'
+  if (selected && !locked) return '#ffffff'
+
+  let base: string
   switch (record.metaType) {
     case 'SNAP_CYL':
-      return (record.gender ?? 'M') === 'M' ? '#3b82f6' : '#f97316'
+      base = (record.gender ?? 'M') === 'M' ? '#3b82f6' : '#f97316'
+      break
     case 'SNAP_CLP':
-      return '#a855f7'
+      base = '#a855f7'
+      break
     case 'SNAP_FGR':
-      return '#22c55e'
+      base = '#22c55e'
+      break
     case 'SNAP_GEN':
     case 'SNAP_SPH':
-      return '#eab308'
+      base = '#eab308'
+      break
     default:
-      return '#94a3b8'
+      base = '#94a3b8'
+  }
+
+  if (!locked) return base
+
+  // Desaturated variants — keep hue family, signal “not editable”
+  switch (record.metaType) {
+    case 'SNAP_CYL':
+      return (record.gender ?? 'M') === 'M' ? '#6b849e' : '#b8896a'
+    case 'SNAP_CLP':
+      return '#8b7aa3'
+    case 'SNAP_FGR':
+      return '#6a9478'
+    case 'SNAP_GEN':
+    case 'SNAP_SPH':
+      return '#a89b6a'
+    default:
+      return '#64748b'
   }
 }

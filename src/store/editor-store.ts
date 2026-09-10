@@ -1,13 +1,48 @@
-import type { LDrawSnapRecord, LDrawSourcedSnapRecord, SnapGender, SnapMetaType } from '@eb/ldraw-models'
+import type {
+  LDrawPartConnectivityInclude,
+  LDrawSnapRecord,
+  LDrawSourcedSnapRecord,
+  SnapGender,
+  SnapMetaType,
+} from '@eb/ldraw-models'
 import type { GeometryFeature, ShadowFileHeader } from '@eb/ldraw-parser'
 import { create } from 'zustand'
+import { isOwnSnap } from '../services/snap-ownership'
+import type { PartChildRef } from '../services/part-children'
 
 export type EditableSnap = LDrawSourcedSnapRecord & {
   /** Stable id for selection / undo (not persisted). */
   id: string
+  /** Original `0 !LDCAD SNAP_*` line from this part's shadow when 1:1 mappable. */
+  rawLine?: string
+  /** Semantic fingerprint at load; if still equal, `rawLine` is emitted on save. */
+  originFingerprint?: string
 }
 
 export type ConnectivityStatus = 'missing' | 'partial' | 'ok' | 'unknown'
+
+export type PartNavMode = 'root' | 'child' | 'back' | 'keep'
+
+const DEFAULT_EDITOR_NAME = 'Part Connectivity Editor'
+const EDITOR_NAME_STORAGE_KEY = 'pce.editorName'
+
+function readEditorName(): string {
+  try {
+    const stored = sessionStorage.getItem(EDITOR_NAME_STORAGE_KEY)
+    const trimmed = stored?.trim()
+    return trimmed || DEFAULT_EDITOR_NAME
+  } catch {
+    return DEFAULT_EDITOR_NAME
+  }
+}
+
+function writeEditorName(name: string): void {
+  try {
+    sessionStorage.setItem(EDITOR_NAME_STORAGE_KEY, name)
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
 
 export interface EditorSnapState {
   partFile: string | null
@@ -19,8 +54,22 @@ export interface EditorSnapState {
   error: string | null
   status: ConnectivityStatus
   hadShadowFile: boolean
+  /** Geometry header is `!LDRAW_ORG Unofficial_*`. */
+  isUnofficial: boolean
   /** Parsed header from the existing shadow file (null for brand-new shadows). */
   shadowHeader: ShadowFileHeader | null
+  /** Raw shadow file text at load time (empty string / null → treat as new). */
+  shadowSourceText: string | null
+  /** Prefill SNAP_INCL entries for a brand-new shadow (empty when a file already exists). */
+  ownIncludes: LDrawPartConnectivityInclude[]
+  /**
+   * inherit: inherited (SNAP_INCL) snaps are read-only; save keeps INCL and only
+   * writes own snap lines.
+   * flatten: all snaps editable; save writes SNAP_CLEAR + full list (legacy).
+   */
+  definitionMode: 'inherit' | 'flatten'
+  /** Name used in HISTORY braces; persists for the browser tab session. */
+  editorName: string
   showMale: boolean
   showFemale: boolean
   showSourceLabels: boolean
@@ -47,7 +96,12 @@ export interface EditorSnapState {
   /** Undo stack (snapshots of snaps arrays). */
   past: EditableSnap[][]
   future: EditableSnap[][]
-  savePreview: string | null
+  /** Direct type-1 children of the loaded part (one level). */
+  partChildren: PartChildRef[]
+  /** Resolved LDraw geometry URL for the current part. */
+  geometryUrl: string | null
+  /** Previously loaded parts when drilling into a child primitive. */
+  partNavStack: string[]
 }
 
 export interface EditorSnapActions {
@@ -56,12 +110,27 @@ export interface EditorSnapActions {
   loadPart: (payload: {
     partFile: string
     partName?: string
-    snaps: LDrawSourcedSnapRecord[]
+    snaps: Array<
+      LDrawSourcedSnapRecord & {
+        rawLine?: string
+        originFingerprint?: string
+      }
+    >
     hadShadowFile: boolean
     geometryFeatures?: GeometryFeature[]
     shadowHeader?: ShadowFileHeader | null
-  }) => void
+    shadowSourceText?: string | null
+    ownIncludes?: LDrawPartConnectivityInclude[]
+    isUnofficial?: boolean
+    children?: PartChildRef[]
+    geometryUrl?: string | null
+  }, nav?: PartNavMode) => void
   setPartName: (name: string) => void
+  setEditorName: (name: string) => void
+  /** Flatten inheritance into this part (unlocks inherited snaps; save uses SNAP_CLEAR). */
+  resetDefinition: () => void
+  /** Return to inherit mode (inherited snaps become read-only again). */
+  clearDefinitionReset: () => void
   selectSnap: (id: string | null) => void
   updateSnap: (id: string, patch: Partial<LDrawSnapRecord>) => void
   /** Update without pushing undo history (used during gizmo drag). */
@@ -89,7 +158,6 @@ export interface EditorSnapActions {
   /** Paste a duplicate of the clipboard snap (offset slightly) and select it. */
   pasteSnap: () => string | null
   setVisibility: (opts: Partial<Pick<EditorSnapState, 'showMale' | 'showFemale' | 'showSourceLabels'>>) => void
-  setSavePreview: (text: string | null) => void
   markClean: () => void
   undo: () => void
   redo: () => void
@@ -117,6 +185,8 @@ function cloneSnaps(snaps: EditableSnap[]): EditableSnap[] {
     ...cloneSnapRecord(s),
     id: s.id,
     sourceFile: s.sourceFile,
+    rawLine: s.rawLine,
+    originFingerprint: s.originFingerprint,
   }))
 }
 
@@ -139,6 +209,16 @@ function snapGender(snap: EditableSnap): SnapGender {
   return snap.gender ?? snap.genderOfs ?? 'M'
 }
 
+function canEditSnap(
+  snap: EditableSnap,
+  partFile: string | null,
+  definitionMode: 'inherit' | 'flatten',
+): boolean {
+  if (!partFile) return false
+  if (definitionMode === 'flatten') return true
+  return isOwnSnap(snap.sourceFile, partFile)
+}
+
 export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, get) => ({
   partFile: null,
   partName: null,
@@ -149,7 +229,12 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
   error: null,
   status: 'unknown',
   hadShadowFile: false,
+  isUnofficial: false,
   shadowHeader: null,
+  shadowSourceText: null,
+  ownIncludes: [],
+  definitionMode: 'inherit',
+  editorName: readEditorName(),
   showMale: true,
   showFemale: true,
   showSourceLabels: false,
@@ -162,12 +247,26 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
   clipboardSnap: null,
   past: [],
   future: [],
-  savePreview: null,
+  partChildren: [],
+  geometryUrl: null,
+  partNavStack: [],
 
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
 
-  loadPart: ({ partFile, partName, snaps, hadShadowFile, geometryFeatures = [], shadowHeader = null }) => {
+  loadPart: ({
+    partFile,
+    partName,
+    snaps,
+    hadShadowFile,
+    geometryFeatures = [],
+    shadowHeader = null,
+    shadowSourceText = null,
+    ownIncludes = [],
+    isUnofficial = false,
+    children = [],
+    geometryUrl = null,
+  }, nav = 'keep') => {
     const editable: EditableSnap[] = snaps.map((s) => ({
       ...s,
       id: newId(),
@@ -175,33 +274,62 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
       position: s.position ?? [0, 0, 0],
       slide: s.slide ?? false,
       center: s.center ?? false,
+      rawLine: s.rawLine,
+      originFingerprint: s.originFingerprint,
     }))
     const resolvedName =
       shadowHeader?.partName?.trim()
       || partName?.trim()
       || (hadShadowFile ? partFile : null)
-    set({
-      partFile,
-      partName: resolvedName,
-      snaps: editable,
-      selectedSnapId: null,
-      dirty: false,
-      loading: false,
-      error: null,
-      hadShadowFile,
-      shadowHeader: hadShadowFile ? shadowHeader : null,
-      status: inferStatus(editable.length, hadShadowFile),
-      past: [],
-      future: [],
-      savePreview: null,
-      geometryFeatures,
-      snapTargetFeatureId: null,
-      pendingPlacement: null,
-      pendingPose: null,
+    const includes = hadShadowFile ? [] : ownIncludes
+    set((state) => {
+      let partNavStack = state.partNavStack
+      if (nav === 'root') {
+        partNavStack = []
+      } else if (nav === 'child' && state.partFile) {
+        partNavStack = [...state.partNavStack, state.partFile]
+      } else if (nav === 'back') {
+        partNavStack = state.partNavStack.slice(0, -1)
+      }
+      return {
+        partFile,
+        partName: resolvedName,
+        snaps: editable,
+        selectedSnapId: null,
+        dirty: !hadShadowFile && includes.length > 0,
+        loading: false,
+        error: null,
+        hadShadowFile,
+        isUnofficial,
+        shadowHeader: hadShadowFile ? shadowHeader : null,
+        shadowSourceText: hadShadowFile ? (shadowSourceText ?? null) : null,
+        ownIncludes: includes,
+        definitionMode: 'inherit',
+        status: inferStatus(editable.length, hadShadowFile),
+        past: [],
+        future: [],
+        geometryFeatures,
+        snapTargetFeatureId: null,
+        pendingPlacement: null,
+        pendingPose: null,
+        partChildren: children,
+        geometryUrl,
+        partNavStack,
+      }
     })
   },
 
   setPartName: (name) => set({ partName: name, dirty: true }),
+
+  setEditorName: (name) => {
+    const trimmed = name.trim() || DEFAULT_EDITOR_NAME
+    writeEditorName(trimmed)
+    set({ editorName: trimmed })
+  },
+
+  resetDefinition: () => set({ definitionMode: 'flatten', dirty: true }),
+
+  clearDefinitionReset: () => set({ definitionMode: 'inherit' }),
 
   selectSnap: (id) => set({ selectedSnapId: id, snapTargetFeatureId: null }),
 
@@ -251,6 +379,8 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
 
   updateSnap: (id, patch) => {
     const state = get()
+    const target = state.snaps.find((s) => s.id === id)
+    if (!target || !canEditSnap(target, state.partFile, state.definitionMode)) return
     const hist = pushHistory(state)
     set({
       ...hist,
@@ -260,6 +390,8 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
 
   updateSnapLive: (id, patch) => {
     const state = get()
+    const target = state.snaps.find((s) => s.id === id)
+    if (!target || !canEditSnap(target, state.partFile, state.definitionMode)) return
     set({
       dirty: true,
       snaps: state.snaps.map((s) => (s.id === id ? { ...s, ...patch } : s)),
@@ -296,6 +428,8 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
 
   deleteSnap: (id) => {
     const state = get()
+    const target = state.snaps.find((s) => s.id === id)
+    if (!target || !canEditSnap(target, state.partFile, state.definitionMode)) return
     const hist = pushHistory(state)
     const snaps = state.snaps.filter((s) => s.id !== id)
     set({
@@ -325,9 +459,7 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
 
   setVisibility: (opts) => set(opts),
 
-  setSavePreview: (text) => set({ savePreview: text }),
-
-  markClean: () => set({ dirty: false, past: [], future: [], savePreview: null }),
+  markClean: () => set({ dirty: false, past: [], future: [] }),
 
   undo: () => {
     const state = get()
@@ -356,4 +488,4 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
   },
 }))
 
-export { snapGender }
+export { snapGender, canEditSnap }

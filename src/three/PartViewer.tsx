@@ -14,10 +14,11 @@ import {
 } from '@eb/ldraw-three-core'
 import type { PartPlacement } from '@eb/ldraw-models'
 import * as THREE from 'three'
-import { useEditorStore, snapGender } from '../store/editor-store'
+import { useEditorStore, snapGender, canEditSnap } from '../store/editor-store'
 import { partGeometryUrl } from '../services/connectivity-api'
 import { RotateAngleHud } from '../components/RotateAngleHud'
 import { SnapTargetHud } from '../components/SnapTargetHud'
+import { InheritedSnapHud } from '../components/InheritedSnapHud'
 import { SnapOverlay } from './SnapOverlay'
 import { SnapGizmo, type RotateDragInfo } from './SnapGizmo'
 import { CameraViewCube } from './CameraViewCube'
@@ -149,6 +150,7 @@ function SnapScene({
   gizmoMode: 'translate' | 'rotate'
   onRotateDrag: (info: RotateDragInfo) => void
 }) {
+  const geometryUrl = useEditorStore((s) => s.geometryUrl)
   const snaps = useEditorStore((s) => s.snaps)
   const selectedSnapId = useEditorStore((s) => s.selectedSnapId)
   const showMale = useEditorStore((s) => s.showMale)
@@ -158,9 +160,13 @@ function SnapScene({
   const updateSnapLive = useEditorStore((s) => s.updateSnapLive)
   const beginTransform = useEditorStore((s) => s.beginTransform)
   const pendingPlacement = useEditorStore((s) => s.pendingPlacement)
+  const definitionMode = useEditorStore((s) => s.definitionMode)
 
-  const url = partGeometryUrl(partFile)
+  const url = partGeometryUrl(partFile, geometryUrl)
   const selected = snaps.find((s) => s.id === selectedSnapId) ?? null
+  const selectedEditable = selected
+    ? canEditSnap(selected, partFile, definitionMode)
+    : false
   // Fit camera to part geometry only — never include snap overlays/gizmos,
   // otherwise dragging a snap outside the brick reframes/zooms the view.
   const [partGeometry, setPartGeometry] = useState<THREE.Object3D | null>(null)
@@ -190,12 +196,13 @@ function SnapScene({
           key={snap.id}
           snap={snap}
           selected={snap.id === selectedSnapId}
+          locked={!canEditSnap(snap, partFile, definitionMode)}
           onSelect={selectSnap}
           showLabel={showSourceLabels}
         />
       ))}
 
-      {selected && !pendingPlacement && (
+      {selected && selectedEditable && !pendingPlacement && (
         <SnapGizmo
           snap={selected}
           mode={gizmoMode}
@@ -270,6 +277,7 @@ export function PartViewer({ gizmoMode }: { gizmoMode: 'translate' | 'rotate' })
         <CameraSyncBridge />
       </Canvas>
       <CameraViewCube />
+      <InheritedSnapHud />
       <RotateAngleHud gizmoMode={gizmoMode} dragInfo={rotateDrag} />
       <SnapTargetHud gizmoMode={gizmoMode} />
       {pendingPlacement && (
