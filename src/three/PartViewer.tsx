@@ -20,7 +20,7 @@ import { RotateAngleHud } from '../components/RotateAngleHud'
 import { SnapTargetHud } from '../components/SnapTargetHud'
 import { InheritedSnapHud } from '../components/InheritedSnapHud'
 import { SnapOverlay } from './SnapOverlay'
-import { SnapGizmo, type RotateDragInfo } from './SnapGizmo'
+import { SnapGizmo, gizmoPointerActive, type RotateDragInfo } from './SnapGizmo'
 import { CameraViewCube } from './CameraViewCube'
 import { CameraSyncBridge } from './CameraSyncBridge'
 import { PlaceSnapTool } from './PlaceSnapTool'
@@ -244,6 +244,9 @@ export function PartViewer({ gizmoMode }: { gizmoMode: 'translate' | 'rotate' })
         orthographic
         camera={{ position: [120, 90, 120], zoom: 1, near: -10000, far: 10000 }}
         onPointerMissed={() => {
+          // TransformControls is not an R3F interactive mesh, so gizmo
+          // clicks look like empty-space misses — keep selection in that case.
+          if (gizmoPointerActive.current) return
           if (useEditorStore.getState().pendingPlacement) return
           useEditorStore.getState().selectSnap(null)
         }}

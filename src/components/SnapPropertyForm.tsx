@@ -1,15 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect } from 'react'
 import type { LDrawSnapRecord } from '@eb/ldraw-models'
 import { useEditorStore, canEditSnap } from '../store/editor-store'
-import {
-  orientationToDisplayEulerDeg,
-  rotateSnapAboutDisplayAxis,
-  setDisplayEulerDeg,
-  type RotationAxis,
-} from '../three/snap-rotation'
 import { cameraSync } from '../three/camera-sync'
 import { applyKeyboardNudge, isTypingTarget } from '../three/snap-nudge'
 import { positionStepLdu } from '../three/snap-snap'
+import { parseGrid, type ParsedGrid } from '@eb/ldraw-parser'
+import { defaultGrid, formatGrid } from '../services/snap-grid'
 
 function Num({
   label,
@@ -38,7 +34,84 @@ function Num({
   )
 }
 
-export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rotate' }) {
+function GridFields({
+  grid,
+  onChange,
+}: {
+  grid: string | undefined
+  onChange: (grid: string | undefined) => void
+}) {
+  const parsed = grid ? parseGrid(grid) : null
+  const update = (partial: Partial<ParsedGrid>) => {
+    if (!parsed) return
+    onChange(formatGrid({ ...parsed, ...partial }))
+  }
+  const setCount = (key: 'xCount' | 'zCount', value: number) => {
+    update({ [key]: Math.max(1, Math.round(value) || 1) })
+  }
+
+  return (
+    <div className="grid-editor">
+      <div className="field-row checks">
+        <label>
+          <input
+            type="checkbox"
+            checked={!!grid}
+            onChange={(e) =>
+              onChange(e.target.checked ? formatGrid(parsed ?? defaultGrid()) : undefined)
+            }
+          />
+          Grid
+        </label>
+      </div>
+      {grid && parsed && (
+        <>
+          <p className="muted grid-hint">
+            Repeats this snap from its position. Center places the copies around that origin.
+          </p>
+          <div className="field-row">
+            <Num label="X count" value={parsed.xCount} step={1} onChange={(n) => setCount('xCount', n)} />
+            <Num label="Z count" value={parsed.zCount} step={1} onChange={(n) => setCount('zCount', n)} />
+          </div>
+          <div className="field-row">
+            <Num label="X step" value={parsed.xStep} step={1} onChange={(xStep) => update({ xStep })} />
+            <Num label="Z step" value={parsed.zStep} step={1} onChange={(zStep) => update({ zStep })} />
+          </div>
+          <div className="field-row checks">
+            <label>
+              <input
+                type="checkbox"
+                checked={parsed.xCentered}
+                onChange={(e) => update({ xCentered: e.target.checked })}
+              />
+              center X
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={parsed.zCentered}
+                onChange={(e) => update({ zCentered: e.target.checked })}
+              />
+              center Z
+            </label>
+          </div>
+        </>
+      )}
+      {grid && !parsed && (
+        <label className="field">
+          <span>Grid</span>
+          <input
+            type="text"
+            value={grid}
+            onChange={(e) => onChange(e.target.value || undefined)}
+          />
+        </label>
+      )}
+    </div>
+  )
+}
+
+export function SnapPropertyForm() {
   const partFile = useEditorStore((s) => s.partFile)
   const snaps = useEditorStore((s) => s.snaps)
   const selectedSnapId = useEditorStore((s) => s.selectedSnapId)
@@ -47,22 +120,6 @@ export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rota
   const definitionMode = useEditorStore((s) => s.definitionMode)
   const snap = snaps.find((s) => s.id === selectedSnapId)
   const editable = snap ? canEditSnap(snap, partFile, definitionMode) : false
-
-  const euler = useMemo(
-    () =>
-      snap
-        ? orientationToDisplayEulerDeg(snap.position, snap.orientation)
-        : ([0, 0, 0] as [number, number, number]),
-    [snap],
-  )
-
-  const [customAxis, setCustomAxis] = useState<RotationAxis>('y')
-  const [customDegrees, setCustomDegrees] = useState(90)
-  const [eulerDraft, setEulerDraft] = useState<[number, number, number]>([0, 0, 0])
-
-  useEffect(() => {
-    setEulerDraft(euler)
-  }, [euler[0], euler[1], euler[2], selectedSnapId])
 
   useEffect(() => {
     if (!snap || !editable) return
@@ -107,18 +164,6 @@ export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rota
     const next = [...snap.position] as [number, number, number]
     next[axis] = Math.round(value / posStep) * posStep
     patch({ position: next })
-  }
-
-  const nudge = (axis: RotationAxis, degrees: number) => {
-    patch(rotateSnapAboutDisplayAxis(snap, axis, degrees))
-  }
-
-  const applyCustom = () => {
-    patch(rotateSnapAboutDisplayAxis(snap, customAxis, customDegrees))
-  }
-
-  const applyEuler = () => {
-    patch(setDisplayEulerDeg(snap, eulerDraft))
   }
 
   return (
@@ -180,81 +225,6 @@ export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rota
         <Num label="Z" value={snap.position[2]} onChange={(z) => patchPos(2, z)} step={posStep} />
       </div>
 
-      <div className={`rotation-panel ${gizmoMode === 'rotate' ? 'rotation-panel-active' : ''}`}>
-        <div className="rotation-panel-header">
-          <h3>Rotation</h3>
-          {gizmoMode === 'rotate' && <span className="rotation-badge">Rotate mode</span>}
-        </div>
-        <p className="muted rotation-hint">
-          WASD moves along the nearest view axis ({posStep} LDU). Arrow keys always rotate:
-          ←/→ = ±90° Y, ↑/↓ = ±90° X, Shift+←/→ = ±90° Z
-        </p>
-
-        <div className="field-row">
-          <Num
-            label="Rx °"
-            value={eulerDraft[0]}
-            step={1}
-            onChange={(x) => setEulerDraft([x, eulerDraft[1], eulerDraft[2]])}
-          />
-          <Num
-            label="Ry °"
-            value={eulerDraft[1]}
-            step={1}
-            onChange={(y) => setEulerDraft([eulerDraft[0], y, eulerDraft[2]])}
-          />
-          <Num
-            label="Rz °"
-            value={eulerDraft[2]}
-            step={1}
-            onChange={(z) => setEulerDraft([eulerDraft[0], eulerDraft[1], z])}
-          />
-        </div>
-        <button type="button" className="btn btn-ghost btn-block" onClick={applyEuler}>
-          Set absolute angles
-        </button>
-
-        <div className="nudge-row">
-          <span className="nudge-label">Nudge 90°</span>
-          <button type="button" className="btn btn-ghost" onClick={() => nudge('x', -90)} title="−90° X">
-            X−
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => nudge('x', 90)} title="+90° X">
-            X+
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => nudge('y', -90)} title="−90° Y">
-            Y−
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => nudge('y', 90)} title="+90° Y">
-            Y+
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => nudge('z', -90)} title="−90° Z">
-            Z−
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => nudge('z', 90)} title="+90° Z">
-            Z+
-          </button>
-        </div>
-
-        <div className="field-row custom-angle-row">
-          <label className="field">
-            <span>Axis</span>
-            <select
-              value={customAxis}
-              onChange={(e) => setCustomAxis(e.target.value as RotationAxis)}
-            >
-              <option value="x">X</option>
-              <option value="y">Y</option>
-              <option value="z">Z</option>
-            </select>
-          </label>
-          <Num label="Angle °" value={customDegrees} step={1} onChange={setCustomDegrees} />
-          <button type="button" className="btn" onClick={applyCustom}>
-            Apply
-          </button>
-        </div>
-      </div>
-
       <details className="ori-details">
         <summary>Orientation (9 floats)</summary>
         <div className="ori-grid">
@@ -302,15 +272,10 @@ export function SnapPropertyForm({ gizmoMode }: { gizmoMode: 'translate' | 'rota
         />
       </label>
 
-      <label className="field">
-        <span>Grid</span>
-        <input
-          type="text"
-          placeholder="C 2 C 2 20 20"
-          value={snap.grid ?? ''}
-          onChange={(e) => patch({ grid: e.target.value || undefined })}
-        />
-      </label>
+      <GridFields
+        grid={snap.grid}
+        onChange={(grid) => patch({ grid })}
+      />
 
       {snap.metaType === 'SNAP_CYL' && (
         <>

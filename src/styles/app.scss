@@ -343,7 +343,7 @@ select {
   left: 0.85rem;
   z-index: 5;
   pointer-events: none;
-  min-width: 11rem;
+  min-width: 13.5rem;
   padding: 0.55rem 0.7rem;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -385,10 +385,17 @@ select {
   font-weight: 500;
 }
 
+.rotate-hud-snap {
+  margin-top: 0.15rem;
+  color: var(--accent) !important;
+  font-weight: 600 !important;
+}
+
 .rotate-hud-keys {
   margin-top: 0.4rem;
   font-size: 0.72rem;
   color: #d1d5db;
+  line-height: 1.35;
 }
 
 .viewer-empty {
@@ -654,6 +661,22 @@ select {
   color: var(--muted);
 }
 
+.stud-grid-option {
+  margin-bottom: 0.55rem;
+  padding: 0.45rem 0.55rem 0.15rem;
+  border: 1px solid var(--border);
+  border-radius: var(--eb-radius-card);
+  background: var(--panel-2);
+}
+
+.stud-grid-option > label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+}
+
 .template-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -844,76 +867,12 @@ select {
   margin-bottom: 0.5rem;
 }
 
-.rotation-panel {
-  margin: 0.55rem 0 0.75rem;
-  padding: 0.55rem 0.55rem 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: var(--eb-radius-card);
-  background: var(--panel-2);
+.grid-editor {
+  margin: 0.15rem 0 0.35rem;
 }
 
-.rotation-panel-active {
-  border-color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--eb-brand-primary);
-}
-
-.rotation-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.25rem;
-}
-
-.rotation-panel-header h3 {
-  margin: 0;
-  font-size: 0.82rem;
-  font-weight: 650;
-}
-
-.rotation-badge {
-  font-family: var(--eb-font-condensed);
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent-text);
-  background: var(--eb-brand-primary);
-  border-radius: var(--eb-radius-button);
-  padding: 0.1rem 0.45rem;
-  font-weight: 650;
-}
-
-.rotation-hint {
+.grid-hint {
   margin: 0 0 0.45rem;
-  font-size: 0.72rem;
-}
-
-.nudge-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  align-items: center;
-  margin: 0.45rem 0;
-}
-
-.nudge-label {
-  width: 100%;
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-
-.custom-angle-row {
-  align-items: end;
-}
-
-.custom-angle-row .btn {
-  margin-bottom: 0.05rem;
-  white-space: nowrap;
-}
-
-.btn-block {
-  width: 100%;
-  margin-top: 0.25rem;
 }
 
 .ori-details {

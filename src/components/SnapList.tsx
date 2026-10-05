@@ -1,5 +1,6 @@
 import { useEditorStore, snapGender, canEditSnap } from '../store/editor-store'
 import { isInheritedSnap } from '../services/snap-ownership'
+import { gridSummary } from '../services/snap-grid'
 
 export function SnapList() {
   const partFile = useEditorStore((s) => s.partFile)
@@ -21,6 +22,7 @@ export function SnapList() {
             const gender = snapGender(snap)
             const editable = canEditSnap(snap, partFile, definitionMode)
             const inherited = partFile ? isInheritedSnap(snap.sourceFile, partFile) : false
+            const summary = gridSummary(snap.grid)
             return (
               <li
                 key={snap.id}
@@ -39,6 +41,11 @@ export function SnapList() {
                   {inherited && definitionMode === 'inherit' && (
                     <span className="snap-badge" title={`From ${snap.sourceFile}`}>
                       incl
+                    </span>
+                  )}
+                  {summary && (
+                    <span className="snap-badge" title={snap.grid}>
+                      {summary}
                     </span>
                   )}
                   <span className="snap-pos">

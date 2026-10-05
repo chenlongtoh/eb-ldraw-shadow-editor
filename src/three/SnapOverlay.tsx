@@ -1,6 +1,8 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import { Html } from '@react-three/drei'
+import { expandSnapWithGrid } from '@eb/ldraw-parser'
 import * as THREE from 'three'
+import type { LDrawSnapRecord } from '@eb/ldraw-models'
 import type { EditableSnap } from '../store/editor-store'
 import { cylinderLength, maxRadius, snapColor, snapLocalMatrix } from './snap-geometry'
 
@@ -178,6 +180,43 @@ function GenVisual({
   )
 }
 
+function SnapCell({
+  cell,
+  children,
+  onSelect,
+}: {
+  cell: LDrawSnapRecord
+  children: ReactNode
+  onSelect: () => void
+}) {
+  const groupRef = useRef<THREE.Group>(null)
+  const px = cell.position[0]
+  const py = cell.position[1]
+  const pz = cell.position[2]
+  const ori = cell.orientation.join(',')
+
+  useLayoutEffect(() => {
+    const g = groupRef.current
+    if (!g) return
+    g.matrix.copy(snapLocalMatrix(cell))
+    g.matrixAutoUpdate = false
+    g.updateMatrixWorld(true)
+  }, [cell, px, py, pz, ori])
+
+  return (
+    <group
+      ref={groupRef}
+      matrixAutoUpdate={false}
+      onClick={(e) => {
+        e.stopPropagation()
+        onSelect()
+      }}
+    >
+      {children}
+    </group>
+  )
+}
+
 export function SnapOverlay({
   snap,
   selected,
@@ -192,48 +231,37 @@ export function SnapOverlay({
   onSelect: (id: string) => void
   showLabel: boolean
 }) {
-  const groupRef = useRef<THREE.Group>(null)
   const len = Math.max(cylinderLength(snap), maxRadius(snap) * 2, 8)
-
-  useLayoutEffect(() => {
-    const g = groupRef.current
-    if (!g) return
-    g.matrix.copy(snapLocalMatrix(snap))
-    g.matrixAutoUpdate = false
-    g.updateMatrixWorld(true)
-  }, [snap])
+  const cells = useMemo(() => expandSnapWithGrid(snap), [snap])
 
   return (
-    <group
-      ref={groupRef}
-      matrixAutoUpdate={false}
-      onClick={(e) => {
-        e.stopPropagation()
-        onSelect(snap.id)
-      }}
-    >
-      {snap.metaType === 'SNAP_CYL' && (
-        <CylSections snap={snap} selected={selected} locked={locked} />
-      )}
-      {snap.metaType === 'SNAP_CLP' && (
-        <ClipVisual snap={snap} selected={selected} locked={locked} />
-      )}
-      {snap.metaType === 'SNAP_FGR' && (
-        <FingerVisual snap={snap} selected={selected} locked={locked} />
-      )}
-      {(snap.metaType === 'SNAP_GEN' || snap.metaType === 'SNAP_SPH') && (
-        <GenVisual snap={snap} selected={selected} locked={locked} />
-      )}
-      <AxisArrow length={len} locked={locked} />
-      {showLabel && (
-        <Html center distanceFactor={180} style={{ pointerEvents: 'none' }}>
-          <div className={`snap-label${locked ? ' snap-label-locked' : ''}`}>
-            {snap.metaType.replace('SNAP_', '')}
-            {locked ? ' · incl' : ''}
-            <span>{snap.sourceFile}</span>
-          </div>
-        </Html>
-      )}
-    </group>
+    <>
+      {cells.map((cell, index) => (
+        <SnapCell key={index} cell={cell} onSelect={() => onSelect(snap.id)}>
+          {snap.metaType === 'SNAP_CYL' && (
+            <CylSections snap={snap} selected={selected} locked={locked} />
+          )}
+          {snap.metaType === 'SNAP_CLP' && (
+            <ClipVisual snap={snap} selected={selected} locked={locked} />
+          )}
+          {snap.metaType === 'SNAP_FGR' && (
+            <FingerVisual snap={snap} selected={selected} locked={locked} />
+          )}
+          {(snap.metaType === 'SNAP_GEN' || snap.metaType === 'SNAP_SPH') && (
+            <GenVisual snap={snap} selected={selected} locked={locked} />
+          )}
+          <AxisArrow length={len} locked={locked} />
+          {showLabel && index === 0 && (
+            <Html center distanceFactor={180} style={{ pointerEvents: 'none' }}>
+              <div className={`snap-label${locked ? ' snap-label-locked' : ''}`}>
+                {snap.metaType.replace('SNAP_', '')}
+                {locked ? ' · incl' : ''}
+                <span>{snap.sourceFile}</span>
+              </div>
+            </Html>
+          )}
+        </SnapCell>
+      ))}
+    </>
   )
 }

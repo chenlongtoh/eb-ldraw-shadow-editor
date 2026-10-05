@@ -18,6 +18,8 @@ export type EditableSnap = LDrawSourcedSnapRecord & {
   rawLine?: string
   /** Semantic fingerprint at load; if still equal, `rawLine` is emitted on save. */
   originFingerprint?: string
+  /** LDCad `[ID=…]` from the shadow line. `id` is the editor selection id. */
+  ldcadId?: string
 }
 
 export type ConnectivityStatus = 'missing' | 'partial' | 'ok' | 'unknown'
@@ -63,7 +65,7 @@ export interface EditorSnapState {
   shadowHeader: ShadowFileHeader | null
   /** Raw shadow file text at load time (empty string / null → treat as new). */
   shadowSourceText: string | null
-  /** Prefill SNAP_INCL entries for a brand-new shadow (empty when a file already exists). */
+  /** Prefill SNAP_INCL entries for a brand-new shadow (subparts only; empty when a file already exists). */
   ownIncludes: LDrawPartConnectivityInclude[]
   /**
    * inherit: inherited (SNAP_INCL) snaps are read-only; save keeps INCL and only
@@ -119,6 +121,7 @@ export interface EditorSnapActions {
       LDrawSourcedSnapRecord & {
         rawLine?: string
         originFingerprint?: string
+        ldcadId?: string
       }
     >
     hadShadowFile: boolean
@@ -161,8 +164,8 @@ export interface EditorSnapActions {
   cancelPlaceSnap: () => void
   /** Copy the currently selected snap into the editor clipboard. */
   copySelectedSnap: () => boolean
-  /** Paste a duplicate of the clipboard snap (offset slightly) and select it. */
-  pasteSnap: () => string | null
+  /** Paste: enter click-to-place with a duplicate of the clipboard snap. */
+  pasteSnap: () => boolean
   setVisibility: (opts: Partial<Pick<EditorSnapState, 'showMale' | 'showFemale' | 'showSourceLabels'>>) => void
   markClean: () => void
   /** Treat a downloaded/saved shadow payload as the new baseline (no library reload). */
@@ -195,6 +198,7 @@ function cloneSnaps(snaps: EditableSnap[]): EditableSnap[] {
     sourceFile: s.sourceFile,
     rawLine: s.rawLine,
     originFingerprint: s.originFingerprint,
+    ldcadId: s.ldcadId,
   }))
 }
 
@@ -279,6 +283,7 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
   }, nav = 'keep') => {
     const editable: EditableSnap[] = snaps.map((s) => ({
       ...s,
+      ldcadId: s.ldcadId ?? s.id,
       id: newId(),
       orientation: s.orientation ?? IDENTITY_ORI,
       position: s.position ?? [0, 0, 0],
@@ -461,11 +466,9 @@ export const useEditorStore = create<EditorSnapState & EditorSnapActions>((set, 
 
   pasteSnap: () => {
     const state = get()
-    if (!state.clipboardSnap || !state.partFile) return null
-    const pasted = cloneSnapRecord(state.clipboardSnap)
-    // Offset so the duplicate is visible next to the original.
-    pasted.position = [pasted.position[0] + 1, pasted.position[1], pasted.position[2]]
-    return get().addSnap(pasted, '(paste)')
+    if (!state.clipboardSnap || !state.partFile) return false
+    get().beginPlaceSnap(cloneSnapRecord(state.clipboardSnap))
+    return true
   },
 
   setVisibility: (opts) => set(opts),

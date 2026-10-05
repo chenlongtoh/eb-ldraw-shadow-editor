@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { collectNewShadowIncludes, serializeInclude } from './shadow-includes'
+import { collectNewShadowIncludes, isAutoInheritedPrimitive, serializeInclude } from './shadow-includes'
 
 const LDRAW = path.resolve(__dirname, '../../public/ldraw-parts')
 const CONN = path.resolve(__dirname, '../../public/ldraw-connectivity')
@@ -48,6 +48,20 @@ describe('serializeInclude', () => {
   })
 })
 
+describe('isAutoInheritedPrimitive', () => {
+  it('treats studs and high-res primitives as auto-inherited', () => {
+    expect(isAutoInheritedPrimitive('stud.dat')).toBe(true)
+    expect(isAutoInheritedPrimitive('peghole.dat')).toBe(true)
+    expect(isAutoInheritedPrimitive('48\\stud.dat')).toBe(true)
+  })
+
+  it('does not treat subparts or numbered parts as primitives', () => {
+    expect(isAutoInheritedPrimitive('s\\3003s01.dat')).toBe(false)
+    expect(isAutoInheritedPrimitive('3003.dat')).toBe(false)
+    expect(isAutoInheritedPrimitive('60483a.dat')).toBe(false)
+  })
+})
+
 describe('collectNewShadowIncludes', () => {
   it('includes the largest subpart on 3003 and skips inner studs', async () => {
     const includes = await collectNewShadowIncludes('3003.dat', diskLoader)
@@ -57,7 +71,7 @@ describe('collectNewShadowIncludes', () => {
     expect(includes.every((i) => !/stud/i.test(i.ref))).toBe(true)
   })
 
-  it('includes leaf primitives when a group has no shadow', async () => {
+  it('does not SNAP_INCL leaf primitives (already inherited from geometry)', async () => {
     const files: Record<string, string> = {
       'unofficial.dat': [
         '0 UNOFFICIAL',
@@ -76,10 +90,7 @@ describe('collectNewShadowIncludes', () => {
       loadPartFileContent: async (f) => files[f.replace(/\\/g, '/')] ?? files[f] ?? null,
       loadConnectivityContent: async (f) => conn[f.replace(/\\/g, '/')] ?? conn[f] ?? null,
     })
-    expect(includes).toHaveLength(2)
-    expect(includes.map((i) => i.ref)).toEqual(['stud.dat', 'stud.dat'])
-    expect(includes[0].position).toEqual([-10, 0, -10])
-    expect(includes[1].position).toEqual([10, 0, 10])
+    expect(includes).toEqual([])
   })
 
   it('ignores geometry-only files', async () => {
@@ -90,13 +101,40 @@ describe('collectNewShadowIncludes', () => {
     expect(includes).toEqual([])
   })
 
-  it('synthesizes an include for a classified primitive with no shadow', async () => {
+  it('does not SNAP_INCL classified primitives with synthesized defaults', async () => {
     const includes = await collectNewShadowIncludes('pin.dat', {
       loadPartFileContent: async () => '1 16 0 8 0 1 0 0 0 1 0 0 0 1 peghole.dat\n',
       loadConnectivityContent: async () => null,
     })
+    expect(includes).toEqual([])
+  })
+
+  it('still SNAP_INCLs a nested subpart that has its own shadow', async () => {
+    const files: Record<string, string> = {
+      'custom.dat': [
+        '0 Custom',
+        '1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\body.dat',
+        '1 16 10 0 10 1 0 0 0 1 0 0 0 1 stud.dat',
+        '',
+      ].join('\n'),
+      's/body.dat': '0 Body\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n',
+      'stud.dat': '0 Stud\n',
+    }
+    const conn: Record<string, string> = {
+      's/body.dat': '0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 20]\n',
+      'stud.dat': '0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 6 4]\n',
+    }
+    const includes = await collectNewShadowIncludes('custom.dat', {
+      loadPartFileContent: async (f) => {
+        const key = f.replace(/\\/g, '/')
+        return files[key] ?? files[f] ?? null
+      },
+      loadConnectivityContent: async (f) => {
+        const key = f.replace(/\\/g, '/')
+        return conn[key] ?? conn[f] ?? null
+      },
+    })
     expect(includes).toHaveLength(1)
-    expect(includes[0].ref).toBe('peghole.dat')
-    expect(includes[0].position).toEqual([0, 8, 0])
+    expect(includes[0].ref.toLowerCase().replace(/\//g, '\\')).toBe('s\\body.dat')
   })
 })

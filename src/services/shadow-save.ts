@@ -70,6 +70,15 @@ function snapsSemanticallyEqual(a: LDrawSnapRecord, b: LDrawSnapRecord): boolean
   return snapFingerprint(a) === snapFingerprint(b)
 }
 
+/** Compare snaps after ignoring `[grid=…]`, which the editor resolver clears on load. */
+function snapFingerprintIgnoringGrid(snap: LDrawSnapRecord): string {
+  return snapFingerprint({ ...snap, grid: undefined })
+}
+
+function snapsEqualIgnoringGrid(a: LDrawSnapRecord, b: LDrawSnapRecord): boolean {
+  return snapFingerprintIgnoringGrid(a) === snapFingerprintIgnoringGrid(b)
+}
+
 export interface OriginSnapLine {
   rawLine: string
   record: LDrawSnapRecord
@@ -230,12 +239,92 @@ export type SnapWithOrigin = LDrawSourcedSnapRecord & {
   originFingerprint?: string
   /** Stable editor id when available (for matching during inherit save). */
   id?: string
+  /** LDCad `[ID=…]`, kept apart from the editor id so a rewrite does not drop it. */
+  ldcadId?: string
 }
 
 /**
- * Attach original SNAP line text to resolved (grid-expanded) snaps when:
- * - snap comes from this part's own shadow file
- * - the originating definition was not a multi-cell grid (1:1 line ↔ snap)
+ * Put own `[grid=…]` definitions back together after the resolver expands them.
+ *
+ * A plate such as 68869.dat is two SNAP_CYL grid lines, not twelve loose studs.
+ * Unchanged cells become one snap per original line so a later edit does not
+ * rewrite those lines into individual snaps. A grid is left expanded only when
+ * its cells are no longer all present.
+ */
+export function retainOwnGridSnaps(
+  partFile: string,
+  shadowText: string | null | undefined,
+  snaps: LDrawSourcedSnapRecord[],
+): LDrawSourcedSnapRecord[] {
+  if (!shadowText || snaps.length === 0) return snaps
+  const normalizedPart = normalizePartFile(partFile)
+  const ownIndexes = snaps
+    .map((snap, index) => ({ snap, index }))
+    .filter(({ snap }) => normalizePartFile(snap.sourceFile) === normalizedPart)
+  if (ownIndexes.length === 0) return snaps
+
+  const used = new Set<number>()
+  const findUnused = (target: LDrawSnapRecord, alsoUsed?: Set<number>): number => {
+    const hit = ownIndexes.find(
+      ({ snap, index }) =>
+        !used.has(index) &&
+        !alsoUsed?.has(index) &&
+        snapsEqualIgnoringGrid(snap, target) &&
+        (!snap.grid || snap.grid === target.grid),
+    )
+    return hit?.index ?? -1
+  }
+
+  const defs = extractOwnSnapDefs(shadowText)
+    .map((def) => ({ def, cells: expandSnapWithGrid(def.record) }))
+    .sort((a, b) => b.cells.length - a.cells.length)
+
+  const drop = new Set<number>()
+  const replace = new Map<number, LDrawSourcedSnapRecord>()
+
+  for (const { def, cells } of defs) {
+    if (cells.length <= 1) continue
+    const matched: number[] = []
+    const local = new Set<number>()
+    let complete = true
+    for (const cell of cells) {
+      const index = findUnused(cell, local)
+      if (index < 0 || snaps[index].grid) {
+        complete = false
+        break
+      }
+      local.add(index)
+      matched.push(index)
+    }
+    if (!complete) continue
+    for (const index of matched) used.add(index)
+    const first = Math.min(...matched)
+    for (const index of matched) {
+      if (index !== first) drop.add(index)
+    }
+    replace.set(first, { ...def.record, sourceFile: normalizedPart })
+  }
+
+  for (const { def, cells } of defs) {
+    if (cells.length !== 1) continue
+    const index = findUnused(cells[0])
+    if (index < 0) continue
+    used.add(index)
+    if (def.record.grid && !snaps[index].grid) {
+      replace.set(index, { ...snaps[index], grid: def.record.grid })
+    }
+  }
+
+  if (replace.size === 0 && drop.size === 0) return snaps
+  return snaps.flatMap((snap, index) => {
+    if (drop.has(index)) return []
+    return [replace.get(index) ?? snap]
+  })
+}
+
+/**
+ * Attach original SNAP line text to snaps from this part's own shadow file.
+ * Grid snaps stay one record (the `[grid=…]` line), so they match 1:1.
  */
 export function attachOriginLines(
   partFile: string,
@@ -258,6 +347,14 @@ export function attachOriginLines(
     for (let i = 0; i < ownDefs.length; i++) {
       if (claimed.has(i)) continue
       const def = ownDefs[i]
+      if (snapsSemanticallyEqual(def.record, snap)) {
+        claimed.add(i)
+        return {
+          ...base,
+          rawLine: def.rawLine,
+          originFingerprint: snapFingerprint(snap),
+        }
+      }
       const expanded = expandSnapWithGrid(def.record)
       if (expanded.length !== 1) continue
       if (!snapsSemanticallyEqual(expanded[0], snap)) continue
@@ -272,6 +369,11 @@ export function attachOriginLines(
   })
 }
 
+function withLibrarySnapId(line: string, snapId: string | undefined): string {
+  if (!snapId || /\[id=/i.test(line)) return line
+  return line.replace(/^(0 !LDCAD SNAP_[A-Z]+)/, `$1 [ID=${snapId}]`)
+}
+
 export function emitSnapLine(snap: SnapWithOrigin): string | null {
   if (
     snap.rawLine &&
@@ -280,7 +382,9 @@ export function emitSnapLine(snap: SnapWithOrigin): string | null {
   ) {
     return snap.rawLine
   }
-  return serializeSnapRecord(snap)
+  const line = serializeSnapRecord(snap)
+  if (!line) return null
+  return withLibrarySnapId(line, snap.ldcadId)
 }
 
 function buildFreshPreamble(
@@ -367,7 +471,8 @@ function buildInheritContent(options: {
   const ownSnaps = snaps.filter((s) => isOwnSnap(s.sourceFile, partFile))
   const claimed = new Set<string>()
 
-  const claimKey = (s: SnapWithOrigin, index: number) => s.id ?? `idx:${index}`
+  // Index, not LDCad `[ID=…]`. Many grid areas share one id (for example `connhole`).
+  const claimKey = (_s: SnapWithOrigin, index: number) => String(index)
 
   const matchOwnForLine = (line: string): SnapWithOrigin | null => {
     const normalized = line.trimEnd()
@@ -381,17 +486,56 @@ function buildInheritContent(options: {
 
     const parsed = parseConnectivityFile(`${normalized}\n`, '_line.dat').snaps[0]
     if (!parsed) return null
-    const expanded = expandSnapWithGrid(parsed)
-    if (expanded.length !== 1) return null
-
-    const bySem = ownSnaps.findIndex(
-      (s, i) => !claimed.has(claimKey(s, i)) && snapsSemanticallyEqual(expanded[0], s),
+    const byDef = ownSnaps.findIndex(
+      (s, i) => !claimed.has(claimKey(s, i)) && snapsSemanticallyEqual(parsed, s),
     )
-    if (bySem >= 0) {
-      claimed.add(claimKey(ownSnaps[bySem], bySem))
-      return ownSnaps[bySem]
+    if (byDef >= 0) {
+      claimed.add(claimKey(ownSnaps[byDef], byDef))
+      return ownSnaps[byDef]
     }
-    return null
+    const expanded = expandSnapWithGrid(parsed)
+    if (expanded.length > 1) {
+      const matched: number[] = []
+      const local = new Set<number>()
+      for (const cell of expanded) {
+        const index = ownSnaps.findIndex(
+          (snap, i) =>
+            !claimed.has(claimKey(snap, i)) &&
+            !local.has(i) &&
+            !snap.grid &&
+            snapsEqualIgnoringGrid(cell, snap),
+        )
+        if (index < 0) return null
+        local.add(index)
+        matched.push(index)
+      }
+      for (const index of matched) claimed.add(claimKey(ownSnaps[index], index))
+      return {
+        ...parsed,
+        sourceFile: normalizePartFile(partFile),
+        rawLine: normalized,
+        originFingerprint: snapFingerprint(parsed),
+      }
+    }
+
+    const byCell = ownSnaps.findIndex(
+      (snap, i) =>
+        !claimed.has(claimKey(snap, i)) &&
+        snapsEqualIgnoringGrid(expanded[0], snap) &&
+        (!snap.grid || snap.grid === parsed.grid),
+    )
+    if (byCell < 0) return null
+    claimed.add(claimKey(ownSnaps[byCell], byCell))
+    const snap = ownSnaps[byCell]
+    if (parsed.grid && !snap.grid) {
+      return {
+        ...parsed,
+        sourceFile: normalizePartFile(partFile),
+        rawLine: normalized,
+        originFingerprint: snapFingerprint(parsed),
+      }
+    }
+    return snap
   }
 
   let preamble: string[]

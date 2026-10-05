@@ -29,6 +29,12 @@ export function RotateAngleHud({
 
   const showDrag = dragInfo?.active
   const axisLabel = (axis: RotationAxis) => axis.toUpperCase()
+  const snapLabel =
+    dragInfo && Number.isFinite(dragInfo.snapDeg)
+      ? dragInfo.snapDeg < 1
+        ? `${dragInfo.snapDeg.toFixed(1)}°`
+        : `${dragInfo.snapDeg}°`
+      : null
 
   return (
     <div className="rotate-hud" aria-live="polite">
@@ -45,9 +51,12 @@ export function RotateAngleHud({
             ({axisLabel(dragInfo.axis)} {dragInfo.axisDeltaDeg >= 0 ? '+' : ''}
             {dragInfo.axisDeltaDeg.toFixed(1)}°)
           </span>
+          {snapLabel && <span className="rotate-hud-snap">snap {snapLabel}</span>}
         </div>
       )}
-      <div className="rotate-hud-keys">←→ Y · ↑↓ X · ⇧←→ Z · 90°</div>
+      <div className="rotate-hud-keys">
+        Drag far = fine (0.1°) · near = 1° / 5° / 45° · ←→ Y · ↑↓ X · ⇧←→ Z
+      </div>
     </div>
   )
 }

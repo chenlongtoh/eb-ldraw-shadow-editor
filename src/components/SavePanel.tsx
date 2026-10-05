@@ -200,7 +200,8 @@ export function SavePanel() {
             {prefilledIncludes && (
               <p className="muted">
                 New shadow: prefilled {ownIncludes.length}{' '}
-                {ownIncludes.length === 1 ? 'include' : 'includes'} from primitives.
+                {ownIncludes.length === 1 ? 'include' : 'includes'} from subparts (primitives are
+                inherited from geometry).
               </p>
             )}
             <button

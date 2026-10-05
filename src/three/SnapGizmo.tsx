@@ -17,10 +17,18 @@ import {
   displayOrientationDeltaDeg,
   dominantEulerDelta,
   orientationToDisplayEulerDeg,
+  rotationSnapDegForScreenDistance,
+  screenDistanceNormFromWorld,
   type Ori9,
   type Vec3,
 } from './snap-rotation'
 import { applySnapAnchor, findSnapTarget, positionStepLdu, quantizePosition } from './snap-snap'
+
+/**
+ * True while the transform gizmo is handling a pointer, and briefly after
+ * mouseup so Canvas `onPointerMissed` from the same click does not deselect.
+ */
+export const gizmoPointerActive = { current: false }
 
 export interface RotateDragInfo {
   active: boolean
@@ -28,6 +36,8 @@ export interface RotateDragInfo {
   axis: 'x' | 'y' | 'z'
   axisDeltaDeg: number
   eulerDeg: [number, number, number]
+  /** Active distance-based snap step in degrees. */
+  snapDeg: number
 }
 
 type TranslateGizmo = THREE.Object3D & {
@@ -95,7 +105,8 @@ export function SnapGizmo({
   const dragStartEuler = useRef<[number, number, number] | null>(null)
   const centerLocalYRef = useRef(0)
   const ctrlHeldRef = useRef(false)
-  const { controls, scene } = useThree()
+  const rotateSnapDegRef = useRef(0.1)
+  const { controls, scene, camera, gl } = useThree()
   const geometryFeatures = useEditorStore((s) => s.geometryFeatures)
   const snapToGeometry = useEditorStore((s) => s.snapToGeometry)
   const gridLock = useEditorStore((s) => s.gridLock)
@@ -115,8 +126,37 @@ export function SnapGizmo({
       window.removeEventListener('keydown', syncCtrl)
       window.removeEventListener('keyup', syncCtrl)
       window.removeEventListener('blur', onBlur)
+      gizmoPointerActive.current = false
     }
   }, [])
+
+  // Distance-based rotation snap: update before TransformControls pointermove.
+  useEffect(() => {
+    if (mode !== 'rotate' || !ready) return
+    const tc = controlsRef.current
+    if (!tc) return
+    const el = gl.domElement
+
+    const applySnapForPointer = (clientX: number, clientY: number) => {
+      const obj = anchorRef.current
+      if (!obj) return
+      const rect = el.getBoundingClientRect()
+      const norm = screenDistanceNormFromWorld(obj.position, clientX, clientY, camera, rect)
+      const snapDeg = rotationSnapDegForScreenDistance(norm)
+      rotateSnapDegRef.current = snapDeg
+      tc.setRotationSnap(THREE.MathUtils.degToRad(snapDeg))
+    }
+
+    const onPointerMove = (e: PointerEvent) => {
+      applySnapForPointer(e.clientX, e.clientY)
+    }
+
+    el.addEventListener('pointermove', onPointerMove, true)
+    return () => {
+      el.removeEventListener('pointermove', onPointerMove, true)
+      tc.setRotationSnap(null as unknown as number)
+    }
+  }, [mode, ready, camera, gl, snap.id])
 
   useLayoutEffect(() => {
     setReady(!!anchorRef.current)
@@ -195,6 +235,7 @@ export function SnapGizmo({
         axis: dom.axis,
         axisDeltaDeg: dom.degrees,
         eulerDeg,
+        snapDeg: rotateSnapDegRef.current,
       })
     }
   }
@@ -211,7 +252,9 @@ export function SnapGizmo({
           space="world"
           size={0.85}
           translationSnap={mode === 'translate' ? positionStepLdu(gridLock) : null}
+          rotationSnap={mode === 'rotate' ? THREE.MathUtils.degToRad(rotateSnapDegRef.current) : null}
           onMouseDown={() => {
+            gizmoPointerActive.current = true
             dragging.current = true
             historyPushed.current = false
             centerLocalYRef.current = geometryCenterLocalY(snap)
@@ -240,8 +283,13 @@ export function SnapGizmo({
               axis: 'y',
               axisDeltaDeg: 0,
               eulerDeg: orientationToDisplayEulerDeg(snap.position, snap.orientation),
+              snapDeg: rotateSnapDegRef.current,
             })
             if (controls) (controls as unknown as { enabled: boolean }).enabled = true
+            // Defer clear so the click-miss that follows this mouseup still sees the flag.
+            requestAnimationFrame(() => {
+              gizmoPointerActive.current = false
+            })
           }}
         />
       )}

@@ -1,10 +1,15 @@
 /**
  * Prefill SNAP_INCL lines for a part that has no shadow file yet.
  *
- * Walks the LDraw type-1 tree and includes the largest file that already
- * produces snaps (library shadow or a synthesized primitive default).
- * Children of an included file are skipped — they are already resolved by
- * inheritance. Geometry-only files (box, edge, logo) are ignored.
+ * Walks the LDraw type-1 tree and includes the largest *non-primitive* file
+ * that already produces snaps (e.g. a subpart shadow). Children of an included
+ * file are skipped — they are already resolved by inheritance.
+ *
+ * Primitives (`stud.dat`, `axlehole.dat`, `48/…`, etc.) are **not** written as
+ * SNAP_INCL: LDCad already inherits their snap areas from geometry type-1
+ * references, so an explicit include would double-count them.
+ *
+ * Geometry-only files (box, edge, logo) are ignored.
  */
 
 import type { LDrawPartConnectivityInclude } from '@eb/ldraw-models'
@@ -140,6 +145,22 @@ function hasSynthesizedDefault(partFile: string): boolean {
   return kind != null && DEFAULT_SNAP_KINDS.has(kind)
 }
 
+/**
+ * LDCad inherits snap data from primitives referenced in the part geometry.
+ * Prefilling SNAP_INCL for those refs would double-count their snap areas.
+ *
+ * Subparts (`s\…`) and numbered parts (`3003.dat`) are not primitives and may
+ * still need an explicit SNAP_INCL when creating a new shadow.
+ */
+export function isAutoInheritedPrimitive(partFile: string): boolean {
+  const n = normalizePartFile(partFile).replace(/\\/g, '/').toLowerCase()
+  if (n.startsWith('s/')) return false
+  const base = n.split('/').pop() ?? n
+  // Official / unofficial part files are typically numeric basenames.
+  if (/^\d+[a-z]*\.dat$/i.test(base)) return false
+  return true
+}
+
 async function fileProducesSnaps(
   partFile: string,
   loadConn: (f: string) => Promise<string | null>,
@@ -220,6 +241,8 @@ export async function collectNewShadowIncludes(
       const childPos = applyOri(ori, pos, ref.pos)
       const childOri = mulOri(ori, ref.ori)
       if (await fileProducesSnaps(ref.ref, loadConn, producesCache)) {
+        // Primitives are already inherited from geometry — do not SNAP_INCL.
+        if (isAutoInheritedPrimitive(ref.ref)) continue
         includes.push({
           ref: ref.ref,
           position: childPos,

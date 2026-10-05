@@ -140,3 +140,39 @@ function shortestDegDelta(from: number, to: number): number {
   while (d < -180) d += 360
   return d
 }
+
+/**
+ * Rotation gizmo snap steps (degrees). Closer to the pivot → coarser;
+ * farther out → finer (down to 0.1°).
+ */
+export const ROTATION_SNAP_STEPS_DEG = [45, 5, 1, 0.1] as const
+
+/**
+ * Map normalized screen distance (pixels / min(viewport W,H)) to a snap step.
+ * Bands are tuned so the gizmo ring (~0.08–0.12) sits in the coarse/medium zone.
+ */
+export function rotationSnapDegForScreenDistance(normDist: number): number {
+  if (!Number.isFinite(normDist) || normDist < 0) return ROTATION_SNAP_STEPS_DEG[0]
+  if (normDist < 0.07) return 45
+  if (normDist < 0.14) return 5
+  if (normDist < 0.25) return 1
+  return 0.1
+}
+
+/** NDC / client coords → distance from a projected world point, normalized by viewport. */
+export function screenDistanceNormFromWorld(
+  worldPos: THREE.Vector3,
+  clientX: number,
+  clientY: number,
+  camera: THREE.Camera,
+  rect: DOMRect,
+): number {
+  const ndc = worldPos.clone().project(camera)
+  const sx = (ndc.x * 0.5 + 0.5) * rect.width
+  const sy = (-ndc.y * 0.5 + 0.5) * rect.height
+  const cx = clientX - rect.left
+  const cy = clientY - rect.top
+  const distPx = Math.hypot(cx - sx, cy - sy)
+  const scale = Math.min(rect.width, rect.height)
+  return scale > 0 ? distPx / scale : 0
+}

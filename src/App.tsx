@@ -146,7 +146,7 @@ export function App() {
           <PartSearch />
           <SnapTemplatePicker />
           <SnapList />
-          <SnapPropertyForm gizmoMode={gizmoMode} />
+          <SnapPropertyForm />
         </aside>
         <main className="viewport">
           <PartViewer gizmoMode={gizmoMode} />

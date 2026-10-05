@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseConnectivityFile } from '@eb/ldraw-parser'
+import { expandSnapWithGrid, parseConnectivityFile } from '@eb/ldraw-parser'
 import { diffLines } from './line-diff'
 import {
   appendHistoryToPreamble,
@@ -9,6 +9,7 @@ import {
   buildPreservedShadowContent,
   emitSnapLine,
   extractShadowPreamble,
+  retainOwnGridSnaps,
   snapFingerprint,
 } from './shadow-save'
 
@@ -102,16 +103,11 @@ describe('shadow-save preservation', () => {
           position: [0, 0, 0],
           orientation: [1, 0, 0, 0, 1, 0, 0, 0, 1],
         },
-        {
-          ref: 'stud.dat',
-          position: [10, 0, 10],
-          orientation: [1, 0, 0, 0, 1, 0, 0, 0, 1],
-        },
       ],
     })
 
     expect(text).toContain('0 !LDCAD SNAP_INCL [ref=s\\7126s01.dat]')
-    expect(text).toContain('0 !LDCAD SNAP_INCL [ref=stud.dat] [pos=10 0 10]')
+    expect(text).not.toContain('stud.dat')
     expect(text).not.toContain('SNAP_CLEAR')
     expect(text).toContain('0 LDCad shadow info for "Unofficial brick"')
     expect(text).toContain('0 Author: LDCad Shadow Library')
@@ -344,6 +340,187 @@ describe('shadow-save preservation', () => {
     })
     expect(text).not.toContain('{unofficial}')
     expect(text).toContain('0 LDCad shadow info for "Brick  2 x  2"')
+  })
+
+  it('keeps an unchanged grid snap as one line', () => {
+    const shadow = [
+      '0 LDCad shadow info for "Brick  2 x  2"',
+      '',
+      '0 Author: LDCad Shadow Library',
+      '0 !LICENSE CC BY-SA 4.0, see LICENSE.md',
+      '',
+      '0 !HISTORY 2013-11-22 {Roland Melkert} Initial info for 3003s01.dat',
+      '',
+      '0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 20] [pos=0 24 0] [grid=C 2 C 2 20 20]',
+      '',
+    ].join('\n')
+    const snap = parseConnectivityFile(shadow, '3003s01.dat').snaps[0]
+    const withOrigin = attachOriginLines('3003s01.dat', shadow, [
+      { ...snap, sourceFile: '3003s01.dat' },
+    ])
+    expect(withOrigin[0].rawLine).toContain('[grid=C 2 C 2 20 20]')
+
+    const text = buildPreservedShadowContent({
+      partFile: '3003s01.dat',
+      partName: 'Brick  2 x  2',
+      snaps: withOrigin,
+      shadowSourceText: shadow,
+      isNewShadow: false,
+      historyNote: 'Edited connectivity for 3003s01.dat',
+      editorName: 'Part Connectivity Editor',
+      mode: 'inherit',
+    })
+    const cylLines = text.split('\n').filter((line) => line.includes('SNAP_CYL'))
+    expect(cylLines).toEqual([
+      '0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 20] [pos=0 24 0] [grid=C 2 C 2 20 20]',
+    ])
+  })
+
+  it('keeps every original grid area when another snap is edited', () => {
+    const shadow = [
+      '0 LDCad shadow info for "Tile  4 x  4"',
+      '',
+      '0 Author: LDCad Shadow Library',
+      '0 !LICENSE CC BY-SA 4.0, see LICENSE.md',
+      '',
+      '0 !HISTORY 2024-06-08 {Roland Melkert} Initial info for 68869.dat',
+      '',
+      '0 !LDCAD SNAP_INCL [ref=connhole.dat] [pos=0 10 0] [grid=C 9 1 20 0]',
+      '0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4] [pos=0 8 0] [grid=C 4 C 2 20 20]',
+      '0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4] [pos=0 8 0] [grid=C 2 C 2 20 60]',
+      '0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 6 4] [pos=0 0 0]',
+      '',
+    ].join('\n')
+
+    const exploded = parseConnectivityFile(shadow, '68869.dat').snaps.flatMap((snap) =>
+      expandSnapWithGrid(snap).map((cell) => ({
+        ...cell,
+        sourceFile: '68869.dat',
+        grid: undefined as string | undefined,
+      })),
+    )
+    expect(exploded.length).toBeGreaterThan(2)
+
+    const retained = retainOwnGridSnaps('68869.dat', shadow, exploded)
+    expect(retained.map((snap) => snap.grid)).toEqual([
+      'C 4 C 2 20 20',
+      'C 2 C 2 20 60',
+      undefined,
+    ])
+
+    const withOrigin = attachOriginLines('68869.dat', shadow, retained)
+    const stud = withOrigin.find((snap) => snap.gender === 'M')
+    expect(stud).toBeTruthy()
+    const edited = withOrigin.map((snap) =>
+      snap === stud ? { ...snap, position: [10, 0, 0] as [number, number, number] } : snap,
+    )
+
+    const text = buildPreservedShadowContent({
+      partFile: '68869.dat',
+      partName: 'Tile  4 x  4',
+      snaps: edited,
+      shadowSourceText: shadow,
+      isNewShadow: false,
+      historyNote: 'Edited connectivity for 68869.dat',
+      editorName: 'Part Connectivity Editor',
+      mode: 'inherit',
+    })
+    expect(text).toContain(
+      '0 !LDCAD SNAP_INCL [ref=connhole.dat] [pos=0 10 0] [grid=C 9 1 20 0]',
+    )
+    expect(text).toContain(
+      '0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4] [pos=0 8 0] [grid=C 4 C 2 20 20]',
+    )
+    expect(text).toContain(
+      '0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4] [pos=0 8 0] [grid=C 2 C 2 20 60]',
+    )
+    const cylLines = text.split('\n').filter((line) => line.includes('SNAP_CYL'))
+    expect(cylLines).toHaveLength(3)
+    expect(cylLines.some((line) => line.includes('[pos=10 0 0]'))).toBe(true)
+  })
+
+  it('writes an edited grid area back as one grid line', () => {
+    const shadow = [
+      '0 LDCad shadow info for "Tile  4 x  4"',
+      '',
+      '0 !HISTORY 2024-06-08 {Roland Melkert} Initial info for 68869.dat',
+      '',
+      '0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4] [pos=0 8 0] [grid=C 4 C 2 20 20]',
+      '0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4] [pos=0 8 0] [grid=C 2 C 2 20 60]',
+      '',
+    ].join('\n')
+    const exploded = parseConnectivityFile(shadow, '68869.dat').snaps.flatMap((snap) =>
+      expandSnapWithGrid(snap).map((cell) => ({
+        ...cell,
+        sourceFile: '68869.dat',
+        grid: undefined as string | undefined,
+      })),
+    )
+    const withOrigin = attachOriginLines(
+      '68869.dat',
+      shadow,
+      retainOwnGridSnaps('68869.dat', shadow, exploded),
+    )
+    const moved = withOrigin.map((snap, index) =>
+      index === 0 ? { ...snap, position: [0, 12, 0] as [number, number, number] } : snap,
+    )
+    const text = buildPreservedShadowContent({
+      partFile: '68869.dat',
+      partName: 'Tile  4 x  4',
+      snaps: moved,
+      shadowSourceText: shadow,
+      isNewShadow: false,
+      historyNote: 'Edited connectivity for 68869.dat',
+      editorName: 'Part Connectivity Editor',
+      mode: 'inherit',
+    })
+    const cylLines = text.split('\n').filter((line) => line.includes('SNAP_CYL'))
+    expect(cylLines).toEqual([
+      '0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4] [pos=0 12 0] [grid=C 4 C 2 20 20]',
+      '0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4] [pos=0 8 0] [grid=C 2 C 2 20 60]',
+    ])
+  })
+
+  it('keeps both grid lines when they share an LDCad id', () => {
+    const shadow = [
+      '0 LDCad shadow info for "Technic Beam"',
+      '',
+      '0 !HISTORY 2025-04-05 {Philippe Hurbain} Initial info for 67491.dat',
+      '',
+      '0 !LDCAD SNAP_CYL [ID=connhole] [gender=F] [caps=none] [secs=R 8 2   R 6 16] [slide=true] [pos=30 0 0] [ori=0 1 0 -1 0 0 0 0 1] [grid=1 C 3 0 120]',
+      '0 !LDCAD SNAP_CYL [ID=connhole] [gender=F] [caps=none] [secs=R 8 2   R 6 16] [slide=true] [pos=-30 0 0] [ori=0 -1 0 -1 0 0 0 0 -1] [grid=1 C 3 0 120]',
+      '',
+    ].join('\n')
+    const exploded = parseConnectivityFile(shadow, '67491.dat').snaps.flatMap((snap) =>
+      expandSnapWithGrid(snap).map((cell) => ({
+        ...cell,
+        sourceFile: '67491.dat',
+        grid: undefined as string | undefined,
+      })),
+    )
+    const withOrigin = attachOriginLines(
+      '67491.dat',
+      shadow,
+      retainOwnGridSnaps('67491.dat', shadow, exploded),
+    ).map((snap) => ({ ...snap, ldcadId: snap.id, id: `editor-${snap.position[0]}` }))
+    const moved = withOrigin.map((snap, index) =>
+      index === 0 ? { ...snap, position: [30, 4, 0] as [number, number, number] } : snap,
+    )
+    const text = buildPreservedShadowContent({
+      partFile: '67491.dat',
+      partName: 'Technic Beam',
+      snaps: moved,
+      shadowSourceText: shadow,
+      isNewShadow: false,
+      historyNote: 'Edited connectivity for 67491.dat',
+      editorName: 'Part Connectivity Editor',
+      mode: 'inherit',
+    })
+    const cylLines = text.split('\n').filter((line) => line.includes('SNAP_CYL'))
+    expect(cylLines).toEqual([
+      '0 !LDCAD SNAP_CYL [ID=connhole] [gender=F] [caps=none] [secs=R 8 2   R 6 16] [slide=true] [pos=30 4 0] [ori=0 1 0 -1 0 0 0 0 1] [grid=1 C 3 0 120]',
+      '0 !LDCAD SNAP_CYL [ID=connhole] [gender=F] [caps=none] [secs=R 8 2   R 6 16] [slide=true] [pos=-30 0 0] [ori=0 -1 0 -1 0 0 0 0 -1] [grid=1 C 3 0 120]',
+    ])
   })
 
   it('fingerprint changes when position changes', () => {

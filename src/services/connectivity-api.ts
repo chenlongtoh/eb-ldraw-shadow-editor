@@ -11,6 +11,7 @@ import {
   attachOriginLines,
   buildPreservedShadowContent,
   parseShadowFileHeader,
+  retainOwnGridSnaps,
   type ShadowFileHeader,
   type SnapWithOrigin,
 } from './shadow-save'
@@ -247,7 +248,11 @@ export async function loadPartConnectivity(
   const hadShadowFile = resolved.hadShadowFile || status.hasShadow
   const shadowSourceText = hadShadowFile ? await fetchShadowSourceText(normalized) : null
   const shadowHeader = shadowSourceText ? parseShadowFileHeader(shadowSourceText) : null
-  const snaps = attachOriginLines(normalized, shadowSourceText, resolved.snaps)
+  const snaps = attachOriginLines(
+    normalized,
+    shadowSourceText,
+    retainOwnGridSnaps(normalized, shadowSourceText, resolved.snaps),
+  )
   const ownIncludes = hadShadowFile
     ? []
     : await collectNewShadowIncludes(normalized, fileLoader)
