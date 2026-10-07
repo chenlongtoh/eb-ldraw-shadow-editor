@@ -20,9 +20,8 @@ import {
   type ConnectivityFileLoader,
   type GeometryFeatureKind,
 } from '@eb/ldraw-parser'
+import { readGeometry, readShadow } from './libraries'
 
-const BUNDLED_PARTS_BASE_PATH = '/ldraw-parts'
-const CONNECTIVITY_BASE_PATH = '/ldraw-connectivity'
 const MAX_NEST_DEPTH = 100
 
 const IDENTITY_ORI: LDrawPartConnectivityInclude['orientation'] = [1, 0, 0, 0, 1, 0, 0, 0, 1]
@@ -100,44 +99,8 @@ function extractType1Refs(content: string): Type1Ref[] {
   return refs
 }
 
-function candidateUrls(base: string, partFile: string): string[] {
-  const normalized = normalizePartFile(partFile)
-  const urls = [`${base}/parts/${normalized}`, `${base}/p/${normalized}`]
-  const slash = normalized.replace(/\\/g, '/')
-  if (slash.includes('/')) {
-    urls.push(`${base}/parts/${slash}`)
-    const name = slash.split('/').pop()
-    if (name) urls.push(`${base}/parts/s/${name}`)
-  }
-  return urls
-}
-
 async function defaultLoadPartFileContent(partFile: string): Promise<string | null> {
-  for (const url of candidateUrls(BUNDLED_PARTS_BASE_PATH, partFile)) {
-    try {
-      const response = await fetch(url)
-      if (response.ok && !response.headers.get('content-type')?.includes('text/html')) {
-        return response.text()
-      }
-    } catch {
-      /* try next */
-    }
-  }
-  return null
-}
-
-async function defaultLoadConnectivityContent(partFile: string): Promise<string | null> {
-  for (const url of candidateUrls(CONNECTIVITY_BASE_PATH, partFile)) {
-    try {
-      const response = await fetch(url)
-      if (response.ok && !response.headers.get('content-type')?.includes('text/html')) {
-        return response.text()
-      }
-    } catch {
-      /* try next */
-    }
-  }
-  return null
+  return (await readGeometry(partFile))?.text ?? null
 }
 
 function hasSynthesizedDefault(partFile: string): boolean {
@@ -221,7 +184,7 @@ export async function collectNewShadowIncludes(
   fileLoader?: ConnectivityFileLoader,
 ): Promise<LDrawPartConnectivityInclude[]> {
   const loadPart = fileLoader?.loadPartFileContent ?? defaultLoadPartFileContent
-  const loadConn = fileLoader?.loadConnectivityContent ?? defaultLoadConnectivityContent
+  const loadConn = fileLoader?.loadConnectivityContent ?? readShadow
   const producesCache = new Map<string, boolean>()
   const includes: LDrawPartConnectivityInclude[] = []
 

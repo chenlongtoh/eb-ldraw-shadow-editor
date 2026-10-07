@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fallbackGeometryUrl, libraryRelCandidates, shadowUrlCandidates } from './ldraw-library-paths'
+import { libraryRelCandidates } from './ldraw-library-paths'
 
 describe('libraryRelCandidates', () => {
   it('searches parts then p for a top-level file', () => {
@@ -21,20 +21,5 @@ describe('libraryRelCandidates', () => {
       'parts/s/1-8cyli.dat',
       'p/1-8cyli.dat',
     ])
-  })
-})
-
-describe('fallbackGeometryUrl', () => {
-  it('maps s/ files to parts/s and other folders to p/', () => {
-    expect(fallbackGeometryUrl('s\\3003s01.dat')).toBe('/ldraw-parts/parts/s/3003s01.dat')
-    expect(fallbackGeometryUrl('48/1-8cyli.dat')).toBe('/ldraw-parts/p/48/1-8cyli.dat')
-    expect(fallbackGeometryUrl('3003.dat')).toBe('/ldraw-parts/parts/3003.dat')
-  })
-})
-
-describe('shadowUrlCandidates', () => {
-  it('serves connectivity from /ldraw-connectivity', () => {
-    expect(shadowUrlCandidates('3003.dat')[0]).toBe('/ldraw-connectivity/parts/3003.dat')
-    expect(shadowUrlCandidates('s\\3003s01.dat')[0]).toBe('/ldraw-connectivity/parts/s/3003s01.dat')
   })
 })

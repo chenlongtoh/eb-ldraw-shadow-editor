@@ -2,20 +2,8 @@ import { defineConfig, type Plugin } from 'vitest/config'
 import { loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
-import {
-  existsSync,
-  createReadStream,
-  readFileSync,
-  statSync,
-  mkdirSync,
-  writeFileSync,
-  renameSync,
-  readdirSync,
-} from 'node:fs'
+import { existsSync, createReadStream, statSync, mkdirSync, writeFileSync, renameSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { isUnofficialLdrawPart, parseLdrawPartDescription } from './src/services/part-official'
-import { libraryRelCandidates } from './src/services/ldraw-library-paths'
-import { listDirectPrimitiveFiles } from './src/services/part-children'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -41,11 +29,7 @@ function isSafeRelativeDatPath(rel: string): boolean {
 
 function resolveUnderRoot(root: string, relUrl: string): string | null {
   const clean = decodeURIComponent(relUrl.split('?')[0]).replace(/^\/+/, '')
-  if (!isSafeRelativeDatPath(clean) && !clean.toLowerCase().endsWith('.ldr')) {
-    // Allow non-.dat for ldraw (LDConfig.ldr, etc.) under ldraw-parts only
-    if (!clean || clean.includes('\0') || clean.includes('..')) return null
-  }
-  if (clean.includes('..')) return null
+  if (!isSafeRelativeDatPath(clean) || clean.includes('..')) return null
   const full = path.resolve(root, clean)
   if (!full.startsWith(root)) return null
   return full
@@ -67,12 +51,7 @@ function serveStaticDir(urlPrefix: string, rootDir: string): Plugin {
           next()
           return
         }
-        const lower = filePath.toLowerCase()
-        const contentType =
-          lower.endsWith('.ldr') || lower.endsWith('.dat')
-            ? 'text/plain; charset=utf-8'
-            : 'application/octet-stream'
-        res.setHeader('Content-Type', contentType)
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8')
         res.setHeader('Cache-Control', 'no-cache')
         createReadStream(filePath).pipe(res)
       })
@@ -80,107 +59,14 @@ function serveStaticDir(urlPrefix: string, rootDir: string): Plugin {
   }
 }
 
-function resolveLibraryFile(root: string, partFile: string): { rel: string; abs: string } | null {
-  for (const rel of libraryRelCandidates(partFile)) {
-    const abs = path.join(root, rel)
-    if (existsSync(abs) && statSync(abs).isFile()) return { rel, abs }
-  }
-  return null
-}
-
-function connectivityApiPlugin(ldrawParts: string, shadowLibrary: string): Plugin {
-  const shadowExists = (partFile: string) => resolveLibraryFile(shadowLibrary, partFile) != null
-
+/** Dev-only write API: Save writes shadow files into the local LDCadShadowLibrary checkout. */
+function connectivityApiPlugin(shadowLibrary: string): Plugin {
   return {
     name: 'connectivity-api',
     configureServer(server) {
       server.middlewares.use('/api/connectivity', (req, res, next) => {
         const method = req.method ?? 'GET'
         const urlPath = (req.url ?? '').split('?')[0].replace(/^\/+/, '')
-
-        if (method === 'GET' && urlPath === 'search') {
-          const url = new URL(req.url ?? '', 'http://localhost')
-          const q = (url.searchParams.get('q') ?? '').trim().toLowerCase()
-          if (!q) {
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ results: [] }))
-            return
-          }
-          const partsDir = path.join(ldrawParts, 'parts')
-          const results: Array<{ partFile: string; hasShadow: boolean }> = []
-          try {
-            const files = readdirSync(partsDir)
-            for (const name of files) {
-              if (!name.toLowerCase().endsWith('.dat')) continue
-              if (!name.toLowerCase().includes(q)) continue
-              results.push({
-                partFile: name.toLowerCase(),
-                hasShadow: shadowExists(name.toLowerCase()),
-              })
-              if (results.length >= 40) break
-            }
-          } catch {
-            // ignore
-          }
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ results }))
-          return
-        }
-
-        if (method === 'GET' && urlPath === 'status') {
-          const url = new URL(req.url ?? '', 'http://localhost')
-          const partFile = (url.searchParams.get('part') ?? '').toLowerCase()
-          if (!partFile.endsWith('.dat') || partFile.includes('..')) {
-            res.statusCode = 400
-            res.end('Bad Request')
-            return
-          }
-          const geometry = resolveLibraryFile(ldrawParts, partFile)
-          let isUnofficial = false
-          let description: string | null = null
-          if (geometry) {
-            try {
-              const header = readFileSync(geometry.abs, 'utf8').slice(0, 8192)
-              isUnofficial = isUnofficialLdrawPart(header)
-              description = parseLdrawPartDescription(header)
-            } catch {
-              // ignore unreadable header
-            }
-          }
-          res.setHeader('Content-Type', 'application/json')
-          res.end(
-            JSON.stringify({
-              partFile,
-              geometryExists: geometry != null,
-              geometryUrl: geometry ? `/ldraw-parts/${geometry.rel}` : null,
-              hasShadow: shadowExists(partFile),
-              isUnofficial,
-              description,
-            }),
-          )
-          return
-        }
-
-        if (method === 'GET' && urlPath === 'children') {
-          const url = new URL(req.url ?? '', 'http://localhost')
-          const partFile = (url.searchParams.get('part') ?? '').toLowerCase()
-          if (!partFile.endsWith('.dat') || partFile.includes('..')) {
-            res.statusCode = 400
-            res.end('Bad Request')
-            return
-          }
-          const geometry = resolveLibraryFile(ldrawParts, partFile)
-          const primitives = geometry
-            ? listDirectPrimitiveFiles(readFileSync(geometry.abs, 'utf8')).map((primitive) => ({
-                ...primitive,
-                hasShadow: shadowExists(primitive.loadFile),
-                geometryExists: resolveLibraryFile(ldrawParts, primitive.loadFile) != null,
-              }))
-            : []
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ partFile, children: primitives }))
-          return
-        }
 
         if (method === 'PUT') {
           const rel = decodeURIComponent(urlPath)
@@ -250,10 +136,10 @@ function localEbToolkitAliases(): Record<string, string> {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '')
-  const LDRAW_PARTS = resolveConfiguredPath(env.LDRAW_PARTS, 'public/ldraw-parts')
-  const CONNECTIVITY = path.resolve(__dirname, 'public/ldraw-connectivity')
+  // The connectivity checkout this editor reads and saves into (geometry comes from the CDN).
+  const CONNECTIVITY = resolveConfiguredPath(env.LDCAD_LIBRARY_DIR, '../LDCadShadowLibrary')
   const ebAliases = localEbToolkitAliases()
-  const allowedFs = [__dirname, LDRAW_PARTS, CONNECTIVITY]
+  const allowedFs = [__dirname, CONNECTIVITY]
   if (Object.keys(ebAliases).length > 0) {
     allowedFs.push(path.resolve(__dirname, '../eb-ldraw-toolkit'))
   }
@@ -261,9 +147,8 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
-      serveStaticDir('/ldraw-parts', LDRAW_PARTS),
       serveStaticDir('/ldraw-connectivity', CONNECTIVITY),
-      connectivityApiPlugin(LDRAW_PARTS, CONNECTIVITY),
+      connectivityApiPlugin(CONNECTIVITY),
     ],
     resolve: {
       dedupe: ['three', '@types/three'],

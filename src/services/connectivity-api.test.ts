@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPartLibrary } from '@eb/ldraw-parser'
 import { downloadTextFile } from './download-file'
 import { resetCustomParts } from './custom-part-geometry'
+import { setLibrariesForTests } from './libraries'
 import {
-  SEARCH_UNAVAILABLE_MESSAGE,
   fetchPartPrimitives,
   fetchPartStatus,
   isMissingWriteApi,
@@ -133,16 +134,6 @@ describe('saveConnectivityFile', () => {
   })
 })
 
-function jsonResponse(data: unknown, status = 200) {
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    headers: { get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null) },
-    json: async () => data,
-    text: async () => JSON.stringify(data),
-  }
-}
-
 function textResponse(text: string, status = 200, contentType = 'text/plain') {
   return {
     ok: status >= 200 && status < 300,
@@ -155,100 +146,94 @@ function textResponse(text: string, status = 200, contentType = 'text/plain') {
   }
 }
 
+const CDN = 'https://cdn.test/ldraw'
+
+/**
+ * A part library holding `files` (library path → text), with fetch serving its
+ * objects and the local connectivity checkout serving `shadows` (path → text).
+ */
+function useLibrary(files: Record<string, string>, shadows: Record<string, string> = {}) {
+  const folders: Record<string, Record<string, string>> = {}
+  const objects: Record<string, string> = {}
+  Object.entries(files).forEach(([libraryPath, text], i) => {
+    const [folder, ...rest] = libraryPath.split('/')
+    const hash = String(i).padStart(8, '0')
+    ;(folders[folder] ??= {})[rest.join('/')] = hash
+    objects[`${CDN}/objects/${hash}/${libraryPath}`] = text
+  })
+  const index = { formatVersion: 1, version: 'test', folders }
+  setLibrariesForTests({ parts: { library: createPartLibrary(index, { baseUrl: CDN }), index } })
+  const fetchMock = vi.fn(async (url: string) => {
+    const body = objects[url] ?? shadows[url.replace(/^\/ldraw-connectivity\//, '')]
+    return body === undefined ? textResponse('Not Found', 404) : textResponse(body)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
 describe('fetchPartStatus', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     resetCustomParts()
+    setLibrariesForTests({ parts: null })
   })
 
-  it('uses the local JSON API when it is available', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        jsonResponse({
-          partFile: '3003.dat',
-          geometryExists: true,
-          geometryUrl: '/ldraw-parts/parts/3003.dat',
-          hasShadow: true,
-          isUnofficial: false,
-          description: 'Brick  2 x  2',
-        }),
-      ),
-    )
-
-    await expect(fetchPartStatus('3003')).resolves.toMatchObject({
-      geometryExists: true,
-      geometryUrl: '/ldraw-parts/parts/3003.dat',
-      hasShadow: true,
-      description: 'Brick  2 x  2',
-    })
-  })
-
-  it('falls back to static files when the status API is missing', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (url.includes('/api/connectivity/status')) {
-          return textResponse('<!doctype html>', 404, 'text/html')
-        }
-        if (url.includes('/ldraw-parts/parts/3003.dat')) {
-          return textResponse('0 Brick  2 x  2\n0 !LDRAW_ORG Part UPDATE 2022-05\n')
-        }
-        if (url.includes('/ldraw-connectivity/parts/3003.dat')) {
-          return textResponse('0 LDCad shadow info\n0 !LDCAD SNAP_CLEAR\n')
-        }
-        return textResponse('Not Found', 404, 'text/plain')
-      }),
+  it('reads geometry from the part library and the shadow from the local checkout', async () => {
+    useLibrary(
+      { 'parts/3003.dat': '0 Brick  2 x  2\n0 !LDRAW_ORG Part UPDATE 2022-05\n' },
+      { 'parts/3003.dat': '0 LDCad shadow info\n0 !LDCAD SNAP_CLEAR\n' },
     )
 
     await expect(fetchPartStatus('3003')).resolves.toEqual({
       partFile: '3003.dat',
       geometryExists: true,
-      geometryUrl: '/ldraw-parts/parts/3003.dat',
+      geometryUrl: `${CDN}/objects/00000000/parts/3003.dat`,
       hasShadow: true,
       isUnofficial: false,
       description: 'Brick  2 x  2',
     })
+  })
+
+  it('reports missing geometry without requesting it', async () => {
+    const fetchMock = useLibrary({})
+    await expect(fetchPartStatus('9999')).resolves.toMatchObject({ geometryExists: false, geometryUrl: null })
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).startsWith(CDN))).toBe(true)
   })
 })
 
 describe('searchParts', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    setLibrariesForTests({ parts: null })
   })
 
-  it('explains that search needs the local editor when the API is missing', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => textResponse('<!doctype html>', 404, 'text/html')),
+  it('searches top-level parts in the library index', async () => {
+    useLibrary(
+      { 'parts/3003.dat': '0 Brick', 'parts/30039.dat': '0 Tile', 'parts/s/3003s01.dat': '0 Sub', 'p/stud.dat': '0 Stud' },
+      { 'parts/3003.dat': '0 !LDCAD SNAP_CLEAR\n' },
     )
-    await expect(searchParts('3003')).rejects.toThrow(SEARCH_UNAVAILABLE_MESSAGE)
+    await expect(searchParts('3003')).resolves.toEqual([
+      { partFile: '3003.dat', hasShadow: true },
+      { partFile: '30039.dat', hasShadow: false },
+    ])
   })
 })
 
 describe('fetchPartPrimitives', () => {
+  beforeEach(() => {
+    useLibrary({
+      'parts/3003.dat': '0 Brick\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n',
+      'p/stud.dat': '0 Stud\n',
+    })
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
     resetCustomParts()
+    setLibrariesForTests({ parts: null })
   })
 
-  it('parses type-1 refs from static geometry when the children API is missing', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (url.includes('/api/connectivity/children')) {
-          return textResponse('<!doctype html>', 404, 'text/html')
-        }
-        if (url.includes('/ldraw-parts/parts/3003.dat')) {
-          return textResponse('0 Brick\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n')
-        }
-        if (url.includes('/ldraw-parts/parts/stud.dat') || url.includes('/ldraw-parts/p/stud.dat')) {
-          return textResponse('0 Stud\n')
-        }
-        return textResponse('Not Found', 404, 'text/plain')
-      }),
-    )
-
+  it('parses type-1 refs from the library geometry', async () => {
     await expect(fetchPartPrimitives('3003')).resolves.toEqual([
       { displayName: 'stud.dat', loadFile: 'stud.dat', count: 1, geometryExists: true, hasShadow: false },
     ])
@@ -259,6 +244,7 @@ describe('loadCustomPartFile', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     resetCustomParts()
+    setLibrariesForTests({ parts: null })
   })
 
   it('rejects non-dat uploads', async () => {
@@ -267,13 +253,10 @@ describe('loadCustomPartFile', () => {
     )
   })
 
-  it('loads uploaded geometry without the status API', async () => {
+  it('loads uploaded geometry that is not in the library', async () => {
     URL.createObjectURL ??= () => 'blob:custom-dat'
     URL.revokeObjectURL ??= () => undefined
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => textResponse('Not Found', 404, 'text/plain')),
-    )
+    useLibrary({})
 
     const loaded = await loadCustomPartFile({
       name: 'CustomBrick.DAT',

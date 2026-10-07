@@ -13,19 +13,3 @@ export function libraryRelCandidates(partFile: string): string[] {
   }
   return [...new Set(cands)]
 }
-
-export function geometryUrlCandidates(partFile: string): string[] {
-  return libraryRelCandidates(partFile).map((rel) => `/ldraw-parts/${rel}`)
-}
-
-export function shadowUrlCandidates(partFile: string): string[] {
-  return libraryRelCandidates(partFile).map((rel) => `/ldraw-connectivity/${rel}`)
-}
-
-/** Best-effort geometry URL when the status probe is unavailable. */
-export function fallbackGeometryUrl(partFile: string): string {
-  const n = normalizePartFile(partFile).replace(/\\/g, '/').toLowerCase()
-  if (n.startsWith('s/')) return `/ldraw-parts/parts/${n}`
-  if (n.includes('/')) return `/ldraw-parts/p/${n}`
-  return `/ldraw-parts/parts/${n}`
-}

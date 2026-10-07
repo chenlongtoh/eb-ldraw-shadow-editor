@@ -17,10 +17,13 @@ import {
 } from './shadow-save'
 import { collectNewShadowIncludes } from './shadow-includes'
 import {
-  fallbackGeometryUrl,
-  geometryUrlCandidates,
-  shadowUrlCandidates,
-} from './ldraw-library-paths'
+  geometryUrl as libraryGeometryUrl,
+  hasGeometry,
+  hasShadow,
+  readGeometry,
+  readShadow,
+  searchLibraryParts,
+} from './libraries'
 import { listDirectPrimitiveFiles, type PartPrimitiveRef } from './part-children'
 import { isUnofficialLdrawPart, parseLdrawPartDescription } from './part-official'
 import {
@@ -28,9 +31,6 @@ import {
   getCustomPartUrl,
   registerCustomPart,
 } from './custom-part-geometry'
-
-export const SEARCH_UNAVAILABLE_MESSAGE =
-  'Part search is only available in the local editor (npm run dev). Load a part ID or upload a .dat file.'
 
 export type PartStatus = {
   partFile: string
@@ -62,96 +62,42 @@ function normalizeInput(raw: string): string {
   return normalizePartFile(s)
 }
 
-type FetchedText = { url: string; text: string }
-
-async function fetchFirstMatch(urls: string[]): Promise<FetchedText | null> {
-  for (const url of urls) {
-    try {
-      const res = await fetch(url)
-      const contentType = res.headers.get('content-type') ?? ''
-      if (!res.ok || contentType.includes('text/html')) continue
-      const text = (await res.text()).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-      return { url, text }
-    } catch {
-      /* try next */
-    }
-  }
-  return null
-}
-
-async function fetchFirstText(urls: string[]): Promise<string | null> {
-  return (await fetchFirstMatch(urls))?.text ?? null
-}
-
-function isJsonApiResponse(res: Response): boolean {
-  const contentType = res.headers.get('content-type') ?? ''
-  return res.ok && contentType.includes('application/json')
-}
-
-async function fetchJsonApi<T>(url: string): Promise<{ ok: true; data: T } | { ok: false; missing: boolean; status: number }> {
-  try {
-    const res = await fetch(url)
-    if (isJsonApiResponse(res)) {
-      return { ok: true, data: (await res.json()) as T }
-    }
-    const contentType = res.headers.get('content-type') ?? ''
-    const missing =
-      res.status === 404 ||
-      res.status === 405 ||
-      res.status === 501 ||
-      contentType.includes('text/html')
-    return { ok: false, missing, status: res.status }
-  } catch {
-    return { ok: false, missing: true, status: 0 }
-  }
-}
-
 const fileLoader: ConnectivityFileLoader & {
   hasConnectivityFile?: (partFile: string) => Promise<boolean>
 } = {
   loadPartFileContent: async (partFile) => {
     const custom = getCustomPartContent(partFile)
     if (custom != null) return custom
-    return fetchFirstText(geometryUrlCandidates(partFile))
+    return (await readGeometry(partFile))?.text ?? null
   },
-  loadConnectivityContent: (partFile) => fetchFirstText(shadowUrlCandidates(partFile)),
-  hasConnectivityFile: async (partFile) =>
-    (await fetchFirstText(shadowUrlCandidates(partFile))) != null,
+  loadConnectivityContent: (partFile) => readShadow(partFile),
+  hasConnectivityFile: (partFile) => hasShadow(partFile),
 }
 
 export async function searchParts(query: string): Promise<Array<{ partFile: string; hasShadow: boolean }>> {
-  const q = query.trim()
-  if (!q) return []
-  const result = await fetchJsonApi<{ results: Array<{ partFile: string; hasShadow: boolean }> }>(
-    `/api/connectivity/search?q=${encodeURIComponent(q)}`,
+  return Promise.all(
+    searchLibraryParts(query).map(async (partFile) => ({ partFile, hasShadow: await hasShadow(partFile) })),
   )
-  if (result.ok) return result.data.results
-  if (result.missing) throw new Error(SEARCH_UNAVAILABLE_MESSAGE)
-  throw new Error(`Search failed: ${result.status}`)
 }
 
-async function fetchPartStatusFromStatic(partFile: string): Promise<PartStatus> {
-  const [geometry, shadow] = await Promise.all([
-    fetchFirstMatch(geometryUrlCandidates(partFile)),
-    fetchFirstText(shadowUrlCandidates(partFile)),
-  ])
+async function fetchPartStatusFromLibrary(partFile: string): Promise<PartStatus> {
+  const [geometry, shadow] = await Promise.all([readGeometry(partFile), hasShadow(partFile)])
   return {
     partFile,
     geometryExists: geometry != null,
     geometryUrl: geometry?.url ?? null,
-    hasShadow: shadow != null,
+    hasShadow: shadow,
     isUnofficial: geometry ? isUnofficialLdrawPart(geometry.text) : false,
     description: geometry ? parseLdrawPartDescription(geometry.text) : null,
   }
 }
 
 async function fetchPartStatusFromCustom(partFile: string, content: string, geometryUrl: string): Promise<PartStatus> {
-  const shadow = await fetchFirstText(shadowUrlCandidates(partFile))
   return {
     partFile,
     geometryExists: true,
     geometryUrl,
-    hasShadow: shadow != null,
+    hasShadow: await hasShadow(partFile),
     isUnofficial: isUnofficialLdrawPart(content),
     description: parseLdrawPartDescription(content),
   }
@@ -165,26 +111,7 @@ export async function fetchPartStatus(partFile: string): Promise<PartStatus> {
     return fetchPartStatusFromCustom(normalized, customContent, customUrl)
   }
 
-  const result = await fetchJsonApi<{
-    partFile: string
-    geometryExists: boolean
-    geometryUrl?: string | null
-    hasShadow: boolean
-    isUnofficial?: boolean
-    description?: string | null
-  }>(`/api/connectivity/status?part=${encodeURIComponent(normalized)}`)
-  if (result.ok) {
-    return {
-      partFile: result.data.partFile,
-      geometryExists: result.data.geometryExists,
-      geometryUrl: result.data.geometryUrl ?? null,
-      hasShadow: result.data.hasShadow,
-      isUnofficial: !!result.data.isUnofficial,
-      description: result.data.description ?? null,
-    }
-  }
-  if (result.missing) return fetchPartStatusFromStatic(normalized)
-  throw new Error(`Status failed: ${result.status}`)
+  return fetchPartStatusFromLibrary(normalized)
 }
 
 async function primitivesFromGeometryText(content: string): Promise<PartPrimitiveRef[]> {
@@ -192,13 +119,11 @@ async function primitivesFromGeometryText(content: string): Promise<PartPrimitiv
   return Promise.all(
     listed.map(async (primitive) => {
       const customChild = getCustomPartContent(primitive.loadFile)
-      const [geometryExists, hasShadow] = await Promise.all([
-        customChild != null
-          ? Promise.resolve(true)
-          : fetchFirstText(geometryUrlCandidates(primitive.loadFile)).then((text) => text != null),
-        fetchFirstText(shadowUrlCandidates(primitive.loadFile)).then((text) => text != null),
-      ])
-      return { ...primitive, geometryExists, hasShadow }
+      return {
+        ...primitive,
+        geometryExists: customChild != null || hasGeometry(primitive.loadFile),
+        hasShadow: await hasShadow(primitive.loadFile),
+      }
     }),
   )
 }
@@ -208,21 +133,13 @@ export async function fetchPartPrimitives(partFile: string): Promise<PartPrimiti
   const customContent = getCustomPartContent(normalized)
   if (customContent) return primitivesFromGeometryText(customContent)
 
-  const result = await fetchJsonApi<{ children?: PartPrimitiveRef[] }>(
-    `/api/connectivity/children?part=${encodeURIComponent(normalized)}`,
-  )
-  if (result.ok) return result.data.children ?? []
-  if (result.missing) {
-    const text = await fetchFirstText(geometryUrlCandidates(normalized))
-    if (!text) return []
-    return primitivesFromGeometryText(text)
-  }
-  throw new Error(`Primitives failed: ${result.status}`)
+  const geometry = await readGeometry(normalized)
+  return geometry ? primitivesFromGeometryText(geometry.text) : []
 }
 
 /** Fetch raw shadow library text for a part, or null if missing / not a shadow file. */
 export async function fetchShadowSourceText(partFile: string): Promise<string | null> {
-  const text = await fetchFirstText(shadowUrlCandidates(partFile))
+  const text = await readShadow(partFile)
   if (!text) return null
   if (!text.includes('!LDCAD') && !/LDCad shadow info/i.test(text)) return null
   return text
@@ -267,7 +184,7 @@ export async function loadPartConnectivity(
     partName: shadowHeader?.partName ?? status.description ?? undefined,
     ownIncludes,
     isUnofficial: !!status.isUnofficial,
-    geometryUrl: status.geometryUrl ?? geometryUrlCandidates(normalized)[0] ?? fallbackGeometryUrl(normalized),
+    geometryUrl: status.geometryUrl ?? libraryGeometryUrl(normalized) ?? '',
     primitives,
     isCustomGeometry,
   }
@@ -413,7 +330,7 @@ export async function saveConnectivityFile(
 }
 
 export function partGeometryUrl(partFile: string, knownUrl?: string | null): string {
-  return knownUrl || fallbackGeometryUrl(partFile)
+  return knownUrl || libraryGeometryUrl(partFile) || ''
 }
 
 export type { SnapWithOrigin, PartPrimitiveRef, ShadowFileHeader }

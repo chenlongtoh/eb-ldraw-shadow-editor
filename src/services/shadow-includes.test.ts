@@ -3,8 +3,9 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { collectNewShadowIncludes, isAutoInheritedPrimitive, serializeInclude } from './shadow-includes'
 
-const LDRAW = path.resolve(__dirname, '../../public/ldraw-parts')
-const CONN = path.resolve(__dirname, '../../public/ldraw-connectivity')
+// Local checkouts of both libraries (sibling clones by default).
+const LDRAW = process.env.LDRAW_PARTS_DIR ?? path.resolve(__dirname, '../../../ldraw-parts')
+const CONN = process.env.LDCAD_LIBRARY_DIR ?? path.resolve(__dirname, '../../../LDCadShadowLibrary')
 
 function loadFromDisk(base: string, partFile: string): string | null {
   const slash = partFile.replace(/\\/g, '/')
