@@ -270,3 +270,41 @@ describe('loadCustomPartFile', () => {
     expect(loaded.primitives).toEqual([])
   })
 })
+
+describe('custom parts', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+    resetCustomParts()
+    setLibrariesForTests({ parts: null })
+  })
+
+  it('reads a custom part shadow from custom_parts/ in the local checkout', async () => {
+    useLibrary(
+      { 'parts/3003.dat': '0 Brick', 'custom_parts/mybrick.dat': '0 My brick\n' },
+      { 'custom_parts/mybrick.dat': '0 !LDCAD SNAP_CLEAR\n' },
+    )
+    await expect(fetchPartStatus('MyBrick')).resolves.toMatchObject({
+      geometryExists: true,
+      geometryUrl: `${CDN}/objects/00000001/custom_parts/mybrick.dat`,
+      hasShadow: true,
+    })
+  })
+
+  it('saves a custom part shadow under custom_parts/ and an official one under parts/', async () => {
+    useLibrary({ 'parts/3003.dat': '0 Brick', 'custom_parts/mybrick.dat': '0 My brick' })
+    const puts: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        puts.push(url)
+        return { ok: true, status: 200, json: async () => ({ wroteToShadowLibrary: true }) }
+      }),
+    )
+
+    await saveConnectivityFile('mybrick', '0 !LDCAD SNAP_CLEAR\n')
+    await saveConnectivityFile('3003', '0 !LDCAD SNAP_CLEAR\n')
+
+    expect(puts).toEqual(['/api/connectivity/custom_parts/mybrick.dat', '/api/connectivity/parts/3003.dat'])
+  })
+})

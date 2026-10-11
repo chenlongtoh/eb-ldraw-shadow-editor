@@ -14,6 +14,8 @@
 import {
   configurePartLibraries,
   createPartLibrary,
+  normalizeLibraryKey,
+  normalizePartFile,
   PART_LIBRARY_FORMAT_VERSION,
   type PartLibrary,
   type PartLibraryIndex,
@@ -22,6 +24,9 @@ import {
 import { libraryRelCandidates } from './ldraw-library-paths'
 
 const DEFAULT_CDN_ORIGIN = 'https://d153vhmiaugp9b.cloudfront.net'
+
+/** Our own parts (and their shadows) live in this folder of both libraries, looked up by id like parts/. */
+export const CUSTOM_PARTS_FOLDER = 'custom_parts'
 
 /** True when connectivity is read from (and saved to) the local checkout. */
 export function usesLocalConnectivity(): boolean {
@@ -106,6 +111,24 @@ export function hasGeometry(partFile: string): boolean {
   return resolveGeometryName(partFile) != null
 }
 
+/** True when the part's geometry is one of ours (ldraw-parts custom_parts/), so its shadow belongs in custom_parts/ too. */
+export function isCustomLibraryPart(partFile: string): boolean {
+  const custom = parts?.index.folders[CUSTOM_PARTS_FOLDER]
+  if (!custom) return false
+  const name = resolveGeometryName(partFile)
+  return !!name && Object.prototype.hasOwnProperty.call(custom, normalizeLibraryKey(name))
+}
+
+function libraryFileName(partFile: string): string {
+  return normalizePartFile(partFile).replace(/\\/g, '/').toLowerCase()
+}
+
+/** Library-relative path a shadow file for this part is saved under. */
+export function shadowSavePath(partFile: string): string {
+  const folder = isCustomLibraryPart(partFile) ? CUSTOM_PARTS_FOLDER : 'parts'
+  return `${folder}/${libraryFileName(partFile)}`
+}
+
 export async function readGeometry(partFile: string): Promise<{ url: string; text: string } | null> {
   const name = resolveGeometryName(partFile)
   if (!name) return null
@@ -122,7 +145,7 @@ export async function readShadow(partFile: string): Promise<string | null> {
     return text != null ? normalizeNewlines(text) : null
   }
   if (!usesLocalConnectivity()) return null
-  for (const rel of libraryRelCandidates(partFile)) {
+  for (const rel of [...libraryRelCandidates(partFile), `${CUSTOM_PARTS_FOLDER}/${libraryFileName(partFile)}`]) {
     try {
       const response = await fetch(`/ldraw-connectivity/${rel}`)
       if (!response.ok || response.headers.get('content-type')?.includes('text/html')) continue

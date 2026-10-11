@@ -21,6 +21,7 @@ import {
   hasGeometry,
   hasShadow,
   readGeometry,
+  shadowSavePath,
   readShadow,
   searchLibraryParts,
 } from './libraries'
@@ -298,7 +299,7 @@ export async function saveConnectivityFile(
     return downloadShadowFile(normalized, content)
   }
 
-  const rel = `parts/${normalized}`
+  const rel = shadowSavePath(normalized)
   try {
     const res = await fetch(`/api/connectivity/${rel}`, {
       method: 'PUT',

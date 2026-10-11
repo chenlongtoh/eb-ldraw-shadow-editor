@@ -75,10 +75,10 @@ function connectivityApiPlugin(shadowLibrary: string): Plugin {
             res.end('Invalid path')
             return
           }
-          // Only allow writes under parts/ (not p/ primitives) for safety in v1
-          if (!rel.replace(/\\/g, '/').startsWith('parts/')) {
+          // Only allow writes under parts/ and custom_parts/ (not p/ primitives) for safety in v1
+          if (!/^(?:parts|custom_parts)\//.test(rel.replace(/\\/g, '/'))) {
             res.statusCode = 403
-            res.end('Writes only allowed under parts/')
+            res.end('Writes only allowed under parts/ and custom_parts/')
             return
           }
           const shadowDest = path.resolve(shadowLibrary, rel)
