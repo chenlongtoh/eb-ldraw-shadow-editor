@@ -53,11 +53,13 @@ describe('resolvePartGeometryFeatures (disk)', () => {
   it('resolves 80285 peghole side holes without shadow files', async () => {
     const features = await resolvePartGeometryFeatures('80285.dat', diskLoader)
     const holes = features.filter((f) => f.featureKind === 'beamHole')
-    // peghole + peghole4 + connhole — not npeghol* cutters
-    expect(holes.length).toBeGreaterThanOrEqual(14)
+    // peghole + peghole4 + connhole — not npeghol* cutters. Counts are for the
+    // official LDraw 80285 (the library no longer carries Studio's copy, which
+    // modelled six peghole4 side holes).
+    expect(holes.length).toBeGreaterThanOrEqual(11)
     expect(holes.every((f) => !f.sourceRef.startsWith('npeghol'))).toBe(true)
     const sidePegholes = holes.filter((f) => f.sourceRef === 'peghole4.dat')
-    expect(sidePegholes.length).toBe(6)
+    expect(sidePegholes.length).toBe(3)
     sidePegholes.forEach((f) => {
       expect(f.snap.gender).toBe('F')
       expect(f.snap.metaType).toBe('SNAP_CYL')

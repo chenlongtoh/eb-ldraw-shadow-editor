@@ -158,7 +158,12 @@ function useLibrary(files: Record<string, string>, shadows: Record<string, strin
   Object.entries(files).forEach(([libraryPath, text], i) => {
     const [folder, ...rest] = libraryPath.split('/')
     const hash = String(i).padStart(8, '0')
-    ;(folders[folder] ??= {})[rest.join('/')] = hash
+    if (folder === 'studio') {
+      // Published like the real index: studio:<key>, with an explicit path.
+      ;(folders.studio ??= {})[`studio:${rest.slice(1).join('/')}`] = `${hash}:${libraryPath}`
+    } else {
+      ;(folders[folder] ??= {})[rest.join('/')] = hash
+    }
     objects[`${CDN}/objects/${hash}/${libraryPath}`] = text
   })
   const index = { formatVersion: 1, version: 'test', folders }
@@ -306,5 +311,34 @@ describe('custom parts', () => {
     await saveConnectivityFile('3003', '0 !LDCAD SNAP_CLEAR\n')
 
     expect(puts).toEqual(['/api/connectivity/custom_parts/mybrick.dat', '/api/connectivity/parts/3003.dat'])
+  })
+})
+
+describe('studio: parts', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    setLibrariesForTests({ parts: null })
+  })
+
+  it('reads and saves Studio part shadows in studio/, apart from the LDraw part of the same id', async () => {
+    useLibrary(
+      { 'parts/u9217.dat': '0 Mario hub\n', 'studio/parts/u9217.dat': '0 Baseplate 14 x 20\n' },
+      { 'studio/parts/u9217.dat': '0 !LDCAD SNAP_CLEAR\n' },
+    )
+    await expect(fetchPartStatus('studio:u9217')).resolves.toMatchObject({ geometryExists: true, hasShadow: true, description: 'Baseplate 14 x 20' })
+    await expect(fetchPartStatus('u9217')).resolves.toMatchObject({ geometryExists: true, hasShadow: false, description: 'Mario hub' })
+    const puts: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      puts.push(url)
+      return { ok: true, status: 200, json: async () => ({ wroteToShadowLibrary: true }) }
+    }))
+    await saveConnectivityFile('studio:u9217', '0 !LDCAD SNAP_CLEAR\n')
+    expect(puts).toEqual(['/api/connectivity/studio/parts/u9217.dat'])
+  })
+
+  it('finds studio: parts in search', async () => {
+    useLibrary({ 'parts/u9217.dat': '0 Mario hub\n', 'studio/parts/u9217.dat': '0 Baseplate\n' })
+    const found = await searchParts('u9217')
+    expect(found.map((r) => r.partFile)).toEqual(['studio:u9217.dat', 'u9217.dat'])
   })
 })

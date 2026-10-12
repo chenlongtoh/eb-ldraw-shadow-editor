@@ -123,8 +123,27 @@ function libraryFileName(partFile: string): string {
   return normalizePartFile(partFile).replace(/\\/g, '/').toLowerCase()
 }
 
+const STUDIO_PREFIX = 'studio:'
+
+/** A Studio part from the library's studio/ overlay (`studio:<id>`), kept apart from the LDraw part of the same id. */
+export function isStudioPart(partFile: string): boolean {
+  return libraryFileName(partFile).startsWith(STUDIO_PREFIX)
+}
+
+/**
+ * Where a studio:<id> part lives in the libraries (`studio/parts/…` or `studio/p/…`),
+ * taken from the part library so its shadow mirrors the geometry's location.
+ */
+function studioRelPath(partFile: string): string {
+  const key = libraryFileName(partFile)
+  const url = parts?.library.resolve(key)
+  const published = url ? /\/objects\/[^/]+\/(studio\/.+)$/.exec(decodeURI(url))?.[1] : null
+  return published ?? `studio/parts/${key.slice(STUDIO_PREFIX.length)}`
+}
+
 /** Library-relative path a shadow file for this part is saved under. */
 export function shadowSavePath(partFile: string): string {
+  if (isStudioPart(partFile)) return studioRelPath(partFile)
   const folder = isCustomLibraryPart(partFile) ? CUSTOM_PARTS_FOLDER : 'parts'
   return `${folder}/${libraryFileName(partFile)}`
 }
@@ -145,7 +164,10 @@ export async function readShadow(partFile: string): Promise<string | null> {
     return text != null ? normalizeNewlines(text) : null
   }
   if (!usesLocalConnectivity()) return null
-  for (const rel of [...libraryRelCandidates(partFile), `${CUSTOM_PARTS_FOLDER}/${libraryFileName(partFile)}`]) {
+  const local = isStudioPart(partFile)
+    ? [studioRelPath(partFile)]
+    : [...libraryRelCandidates(partFile), `${CUSTOM_PARTS_FOLDER}/${libraryFileName(partFile)}`]
+  for (const rel of local) {
     try {
       const response = await fetch(`/ldraw-connectivity/${rel}`)
       if (!response.ok || response.headers.get('content-type')?.includes('text/html')) continue
@@ -162,16 +184,19 @@ export async function hasShadow(partFile: string): Promise<boolean> {
   return (await readShadow(partFile)) != null
 }
 
-/** Top-level library parts whose filename contains `query`, sorted. */
+/** Top-level library parts (and studio:<id> parts) whose name contains `query`, sorted. */
 export function searchLibraryParts(query: string, limit = 40): string[] {
   const q = query.trim().toLowerCase()
   if (!q || !parts) return []
   const results: string[] = []
-  for (const key of Object.keys(parts.index.folders.parts ?? {})) {
-    if (!key.endsWith('.dat') || key.includes('/') || !key.includes(q)) continue
-    results.push(key)
+  for (const folder of ['parts', CUSTOM_PARTS_FOLDER, 'studio']) {
+    for (const key of Object.keys(parts.index.folders[folder] ?? {})) {
+      const name = key.startsWith(STUDIO_PREFIX) ? key.slice(STUDIO_PREFIX.length) : folder === 'studio' ? null : key
+      if (!name || !key.endsWith('.dat') || name.includes('/') || !key.includes(q)) continue
+      results.push(key)
+    }
   }
-  return results.sort().slice(0, limit)
+  return [...new Set(results)].sort().slice(0, limit)
 }
 
 function normalizeNewlines(text: string): string {
