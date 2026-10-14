@@ -600,7 +600,7 @@ export function buildPreservedShadowContent(options: {
   license?: string
   /** inherit = keep INCL; flatten = SNAP_CLEAR + all snaps */
   mode?: SaveDefinitionMode
-  /** Prefill SNAP_INCL entries for a brand-new shadow (inherit mode only). */
+  /** SNAP_INCL lines for a brand-new shadow. Geometry children are not repeated here. */
   includes?: LDrawPartConnectivityInclude[]
   /** Geometry is `!LDRAW_ORG Unofficial_*` — tag title + first HISTORY. */
   isUnofficial?: boolean

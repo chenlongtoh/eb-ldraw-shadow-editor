@@ -21,6 +21,17 @@ describe('expandSnapWithGrid', () => {
     expect(gridSummary('C 2 C 2 20 20')).toBe('2×2')
   })
 
+  it('expands and round-trips a 3D grid (18910\'s hinge pins repeat along the snap\'s Y)', () => {
+    const snap = parseConnectivityFile(
+      '0 !LDCAD SNAP_CYL [gender=M] [caps=two] [secs=R 4 8] [pos=-26 66 -40] [ori=0 1 0 -1 0 0 0 0 1] [grid=1 2 1 0 60 0]',
+      '18910.dat',
+    ).snaps[0]
+    expect(expandSnapWithGrid(snap).map((s) => s.position)).toEqual([[-26, 66, -40], [34, 66, -40]])
+    expect(formatGrid(parseGrid('1 2 1 0 60 0')!)).toBe('1 2 1 0 60 0')
+    expect(formatGrid(parseGrid('1 C 2 1 0 46 0')!)).toBe('1 C 2 1 0 46 0')
+    expect(gridSummary('1 2 1 0 60 0')).toBe('1×2×1')
+  })
+
   it('builds a centered stud-pitch grid for plates', () => {
     expect(studAreaGrid(4, 2)).toBe('C 4 C 2 20 20')
     expect(studAreaGrid(1, 1)).toBeUndefined()

@@ -46,7 +46,7 @@ function GridFields({
     if (!parsed) return
     onChange(formatGrid({ ...parsed, ...partial }))
   }
-  const setCount = (key: 'xCount' | 'zCount', value: number) => {
+  const setCount = (key: 'xCount' | 'yCount' | 'zCount', value: number) => {
     update({ [key]: Math.max(1, Math.round(value) || 1) })
   }
 
@@ -71,10 +71,12 @@ function GridFields({
           </p>
           <div className="field-row">
             <Num label="X count" value={parsed.xCount} step={1} onChange={(n) => setCount('xCount', n)} />
+            <Num label="Y count" value={parsed.yCount ?? 1} step={1} onChange={(n) => setCount('yCount', n)} />
             <Num label="Z count" value={parsed.zCount} step={1} onChange={(n) => setCount('zCount', n)} />
           </div>
           <div className="field-row">
             <Num label="X step" value={parsed.xStep} step={1} onChange={(xStep) => update({ xStep })} />
+            <Num label="Y step" value={parsed.yStep ?? 0} step={1} onChange={(yStep) => update({ yStep })} />
             <Num label="Z step" value={parsed.zStep} step={1} onChange={(zStep) => update({ zStep })} />
           </div>
           <div className="field-row checks">
@@ -85,6 +87,14 @@ function GridFields({
                 onChange={(e) => update({ xCentered: e.target.checked })}
               />
               center X
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={parsed.yCentered ?? false}
+                onChange={(e) => update({ yCentered: e.target.checked })}
+              />
+              center Y
             </label>
             <label>
               <input

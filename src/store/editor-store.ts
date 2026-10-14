@@ -65,7 +65,7 @@ export interface EditorSnapState {
   shadowHeader: ShadowFileHeader | null
   /** Raw shadow file text at load time (empty string / null → treat as new). */
   shadowSourceText: string | null
-  /** Prefill SNAP_INCL entries for a brand-new shadow (subparts only; empty when a file already exists). */
+  /** SNAP_INCL lines for a brand-new shadow. Empty: geometry children are inherited. */
   ownIncludes: LDrawPartConnectivityInclude[]
   /**
    * inherit: inherited (SNAP_INCL) snaps are read-only; save keeps INCL and only

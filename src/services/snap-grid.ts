@@ -12,8 +12,21 @@ function formatCount(centered: boolean, count: number): string {
   return centered ? `C ${count}` : String(count)
 }
 
-/** LDCad `[grid=…]` value: `[C] Xcnt [C] Zcnt Xstep Zstep`. */
+/**
+ * LDCad `[grid=…]` value: `[C] Xcnt [C] Zcnt Xstep Zstep`, or the 3D form
+ * `[C] Xcnt [C] Ycnt [C] Zcnt Xstep Ystep Zstep` when the grid repeats along Y.
+ */
 export function formatGrid(grid: ParsedGrid): string {
+  if ((grid.yCount ?? 1) > 1) {
+    return [
+      formatCount(grid.xCentered, grid.xCount),
+      formatCount(grid.yCentered ?? false, grid.yCount ?? 1),
+      formatCount(grid.zCentered, grid.zCount),
+      formatNumber(grid.xStep),
+      formatNumber(grid.yStep ?? 0),
+      formatNumber(grid.zStep),
+    ].join(' ')
+  }
   return [
     formatCount(grid.xCentered, grid.xCount),
     formatCount(grid.zCentered, grid.zCount),
@@ -65,7 +78,7 @@ export function gridSummary(grid: string | undefined): string | null {
   if (!grid) return null
   const parsed = parseGrid(grid)
   if (!parsed) return 'grid'
-  const { xCount, zCount } = parsed
-  if (xCount === 1 && zCount === 1) return null
-  return `${xCount}×${zCount}`
+  const { xCount, zCount, yCount = 1 } = parsed
+  if (xCount === 1 && yCount === 1 && zCount === 1) return null
+  return yCount > 1 ? `${xCount}×${yCount}×${zCount}` : `${xCount}×${zCount}`
 }

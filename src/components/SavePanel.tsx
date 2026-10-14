@@ -36,7 +36,6 @@ export function SavePanel() {
 
   const isNewShadow = !hadShadowFile
   const flattened = definitionMode === 'flatten'
-  const prefilledIncludes = !hadShadowFile && ownIncludes.length > 0
   const downloadOnly = prefersDownloadSave()
 
   const [editorDraft, setEditorDraft] = useState(editorName)
@@ -197,13 +196,6 @@ export function SavePanel() {
               Inherited snaps are read-only. Save keeps <code>SNAP_INCL</code> and only writes own
               additions/edits.
             </p>
-            {prefilledIncludes && (
-              <p className="muted">
-                New shadow: prefilled {ownIncludes.length}{' '}
-                {ownIncludes.length === 1 ? 'include' : 'includes'} from subparts (primitives are
-                inherited from geometry).
-              </p>
-            )}
             <button
               type="button"
               className="btn btn-ghost"
